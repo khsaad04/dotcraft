@@ -1,0 +1,10 @@
+[package]
+name = "dotman"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+material-colors = { version = "0.4.2", features = ["image"] }
+serde = { version = "1.0.213", features = ["derive"] }
+tinytemplate = "1.2.1"
+toml = "0.8.19"

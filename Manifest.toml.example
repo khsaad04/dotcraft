@@ -1,0 +1,5 @@
+[config]
+wallpaper = "wp.jpg"
+
+[files]
+test = {target = "test", dest = "dest", template = "temp"}
