@@ -26,6 +26,41 @@ struct File {
     template: Option<PathBuf>,
 }
 
+fn main() -> io::Result<()> {
+    let manifest_path = PathBuf::from_str("Manifest.toml").unwrap();
+    if !manifest_path.exists() {
+        eprintln!("ERROR: Manifest.toml not found");
+    }
+    let mut manifest: Manifest = toml::from_str(&fs::read_to_string(manifest_path)?)
+        .expect("ERROR: Failed to parse Manifest.toml");
+
+    let wallpaper = manifest
+        .config
+        .get("wallpaper")
+        .expect("ERROR: config wallpaper not found");
+    let wp_path = PathBuf::from_str(wallpaper).unwrap();
+    if wp_path.exists() {
+        let mut image = ImageReader::open(wallpaper).unwrap();
+        image.resize(128, 128, FilterType::Lanczos3);
+        let theme = ThemeBuilder::with_source(ImageReader::extract_color(&image)).build();
+
+        for (k, v) in theme.schemes.dark.into_iter() {
+            manifest.config.insert(k, v.to_hex());
+        }
+    } else {
+        eprintln!("ERROR: Wallpaper `{}` not found", wp_path.to_str().unwrap());
+    }
+
+    for (_, file) in manifest.files.into_iter() {
+        if let Some(template) = file.template {
+            parse_file(&manifest.config, template, &file.target)?;
+        }
+        symlink_file(&file.target, &file.dest)?;
+    }
+
+    Ok(())
+}
+
 fn parse_file(
     config: &HashMap<String, String>,
     template: PathBuf,
@@ -78,40 +113,5 @@ fn symlink_file(target: &PathBuf, dest: &PathBuf) -> io::Result<()> {
     } else {
         eprintln!("ERROR: Target `{}` not found", target_path);
     }
-    Ok(())
-}
-
-fn main() -> io::Result<()> {
-    let manifest_path = PathBuf::from_str("Manifest.toml").unwrap();
-    if !manifest_path.exists() {
-        eprintln!("ERROR: Manifest.toml not found");
-    }
-    let mut manifest: Manifest = toml::from_str(&fs::read_to_string(manifest_path)?)
-        .expect("ERROR: Failed to parse Manifest.toml");
-
-    let wallpaper = manifest
-        .config
-        .get("wallpaper")
-        .expect("ERROR: config wallpaper not found");
-    let wp_path = PathBuf::from_str(wallpaper).unwrap();
-    if wp_path.exists() {
-        let mut image = ImageReader::open(wallpaper).unwrap();
-        image.resize(128, 128, FilterType::Lanczos3);
-        let theme = ThemeBuilder::with_source(ImageReader::extract_color(&image)).build();
-
-        for (k, v) in theme.schemes.dark.into_iter() {
-            manifest.config.insert(k, v.to_hex());
-        }
-    } else {
-        eprintln!("ERROR: Wallpaper `{}` not found", wp_path.to_str().unwrap());
-    }
-
-    for (_, file) in manifest.files.into_iter() {
-        if let Some(template) = file.template {
-            parse_file(&manifest.config, template, &file.target)?;
-        }
-        symlink_file(&file.target, &file.dest)?;
-    }
-
     Ok(())
 }
