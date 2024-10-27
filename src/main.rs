@@ -43,7 +43,7 @@ fn main() -> Result<()> {
         .expect("ERROR: config wallpaper not found");
     let wp_path = PathBuf::from_str(wallpaper)?;
     if !wp_path.exists() {
-        eprintln!("ERROR: Wallpaper `{}` not found", wp_path.to_str().unwrap());
+        eprintln!("ERROR: Wallpaper `{:?}` not found", wp_path);
     }
     let mut image = ImageReader::open(wallpaper)?;
     image.resize(128, 128, FilterType::Lanczos3);
@@ -53,12 +53,11 @@ fn main() -> Result<()> {
         manifest.config.insert(k, v.to_hex());
     }
 
-    generate_base16(&mut manifest, &theme.source.to_hex())?;
-    dbg!(&manifest.config);
+    generate_base16(&mut manifest.config, &theme.source.to_hex())?;
 
     for (_, file) in manifest.files.into_iter() {
         if let Some(template) = file.template {
-            parse_file(&manifest.config, template, &file.target)?;
+            generate_template(&manifest.config, &template, &file.target)?;
         }
         symlink_file(&file.target, &file.dest)?;
     }
@@ -66,22 +65,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn blend_color(first: &str, second: &str, weight: f32) -> Result<String> {
-    let w1 = weight;
-    let w2 = 1.0 - w1;
-    let first_r = i64::from_str_radix(&first[..2], 16)?;
-    let first_g = i64::from_str_radix(&first[2..4], 16)?;
-    let first_b = i64::from_str_radix(&first[4..6], 16)?;
-    let second_r = i64::from_str_radix(&second[..2], 16)?;
-    let second_g = i64::from_str_radix(&second[2..4], 16)?;
-    let second_b = i64::from_str_radix(&second[4..6], 16)?;
-    let r = (first_r as f32 * w1 + second_r as f32 * w2) as i64;
-    let g = (first_g as f32 * w1 + second_g as f32 * w2) as i64;
-    let b = (first_b as f32 * w1 + second_b as f32 * w2) as i64;
-    Ok(format!("{:x}{:x}{:x}", r, g, b).to_string())
-}
-
-fn generate_base16(manifest: &mut Manifest, source: &str) -> Result<()> {
+fn generate_base16(config: &mut HashMap<String, String>, source_color: &str) -> Result<()> {
     let base16: [(&str, &str); 16] = [
         ("base0", "000000"),
         ("base1", "ff0000"),
@@ -105,13 +89,32 @@ fn generate_base16(manifest: &mut Manifest, source: &str) -> Result<()> {
         if name[4..].parse::<usize>().unwrap() > 7 {
             weight = 0.5;
         }
-        let new_color = blend_color(value, source, weight)?;
-        manifest.config.insert(name.to_string(), new_color);
+        let new_color = blend_color(value, source_color, weight)?;
+        config.insert(name.to_string(), new_color);
     }
     Ok(())
 }
 
-fn parse_file(config: &HashMap<String, String>, template: PathBuf, target: &PathBuf) -> Result<()> {
+fn blend_color(first: &str, second: &str, weight: f32) -> Result<String> {
+    let w1 = weight;
+    let w2 = 1.0 - w1;
+    let first_r = i64::from_str_radix(&first[..2], 16)?;
+    let first_g = i64::from_str_radix(&first[2..4], 16)?;
+    let first_b = i64::from_str_radix(&first[4..6], 16)?;
+    let second_r = i64::from_str_radix(&second[..2], 16)?;
+    let second_g = i64::from_str_radix(&second[2..4], 16)?;
+    let second_b = i64::from_str_radix(&second[4..6], 16)?;
+    let r = (first_r as f32 * w1 + second_r as f32 * w2) as i64;
+    let g = (first_g as f32 * w1 + second_g as f32 * w2) as i64;
+    let b = (first_b as f32 * w1 + second_b as f32 * w2) as i64;
+    Ok(format!("{:x}{:x}{:x}", r, g, b).to_string())
+}
+
+fn generate_template(
+    config: &HashMap<String, String>,
+    template: &PathBuf,
+    target: &PathBuf,
+) -> Result<()> {
     let mut engine = TinyTemplate::new();
 
     let template_path = template.to_str().unwrap();
@@ -124,40 +127,39 @@ fn parse_file(config: &HashMap<String, String>, template: PathBuf, target: &Path
         .render(template_path, &config)
         .context("Failed to render the template")?;
     fs::write(target, rendered)?;
+    println!("INFO: Generated `{:?}` template", template);
     Ok(())
 }
 
 fn symlink_file(target: &PathBuf, dest: &PathBuf) -> Result<()> {
-    let target_path = target.to_str().unwrap();
-    let dest_path = dest.to_str().unwrap();
     if target.exists() {
         match symlink(target, dest) {
             Ok(()) => {
-                println!("INFO: Symlinked `{}` to `{}`", target_path, dest_path);
+                println!("INFO: Symlinked `{:?}` to `{:?}`", target, dest);
             }
             Err(err) => match err.kind() {
                 ErrorKind::AlreadyExists => {
                     eprintln!(
-                        "ERROR: Destination `{}` already exists, resolve it manually",
-                        dest_path
+                        "ERROR: Destination `{:?}` already exists, resolve it manually",
+                        dest
                     );
                 }
                 ErrorKind::NotFound => {
                     let dirpath = dest.parent().unwrap();
-                    println!("INFO: Creating directory `{}`", dirpath.to_str().unwrap());
+                    println!("INFO: Creating directory `{:?}`", dirpath);
                     create_dir_all(dirpath)?;
                     symlink(target, dest)?;
                 }
                 _ => {
                     eprintln!(
-                        "ERROR: Could not symlink `{}` to `{}`. {}",
-                        target_path, dest_path, err
+                        "ERROR: Could not symlink `{:?}` to `{:?}`. {}",
+                        target, dest, err
                     );
                 }
             },
         }
     } else {
-        eprintln!("ERROR: Target `{}` not found", target_path);
+        eprintln!("ERROR: Target `{:?}` not found", target);
     }
     Ok(())
 }
