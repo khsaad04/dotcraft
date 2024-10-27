@@ -133,7 +133,6 @@ fn generate_template(
 
 fn symlink_file(target: &Path, dest: &Path) -> Result<()> {
     let target = &target.canonicalize()?;
-    let dest = &dest.canonicalize()?;
     if target.exists() {
         match symlink(target, dest) {
             Ok(()) => {
