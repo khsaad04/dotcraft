@@ -9,7 +9,7 @@ use std::{
     fs::{self, create_dir_all},
     io::ErrorKind,
     os::unix::fs::symlink,
-    path::PathBuf,
+    path::{Path, PathBuf},
     str::FromStr,
 };
 use tinytemplate::TinyTemplate;
@@ -30,7 +30,7 @@ struct File {
 fn main() -> Result<()> {
     color_eyre::install()?;
 
-    let manifest_path = PathBuf::from_str("Manifest.toml")?;
+    let manifest_path = PathBuf::from_str("Manifest.toml")?.canonicalize()?;
     if !manifest_path.exists() {
         eprintln!("ERROR: Manifest.toml not found");
     }
@@ -57,7 +57,7 @@ fn main() -> Result<()> {
 
     for (_, file) in manifest.files.into_iter() {
         if let Some(template) = file.template {
-            generate_template(&manifest.config, &template, &file.target)?;
+            generate_template(&manifest.config, template, &file.target)?;
         }
         symlink_file(&file.target, &file.dest)?;
     }
@@ -112,17 +112,17 @@ fn blend_color(first: &str, second: &str, weight: f32) -> Result<String> {
 
 fn generate_template(
     config: &HashMap<String, String>,
-    template: &PathBuf,
+    template: PathBuf,
     target: &PathBuf,
 ) -> Result<()> {
-    let mut engine = TinyTemplate::new();
-
+    let template = template.canonicalize()?;
     let template_path = template.to_str().unwrap();
     let data = fs::read_to_string(template_path).context("Failed to parse template file")?;
+
+    let mut engine = TinyTemplate::new();
     engine
         .add_template(template_path, &data)
         .context("Failed to add template to template engine")?;
-
     let rendered = engine
         .render(template_path, &config)
         .context("Failed to render the template")?;
@@ -131,16 +131,18 @@ fn generate_template(
     Ok(())
 }
 
-fn symlink_file(target: &PathBuf, dest: &PathBuf) -> Result<()> {
+fn symlink_file(target: &Path, dest: &Path) -> Result<()> {
+    let target = &target.canonicalize()?;
+    let dest = &dest.canonicalize()?;
     if target.exists() {
         match symlink(target, dest) {
             Ok(()) => {
-                println!("INFO: Symlinked `{:?}` to `{:?}`", target, dest);
+                println!("INFO: Symlinked `{:?}` -> `{:?}`", target, dest);
             }
             Err(err) => match err.kind() {
                 ErrorKind::AlreadyExists => {
-                    eprintln!(
-                        "ERROR: Destination `{:?}` already exists, resolve it manually",
+                    println!(
+                        "WARNING: Destination `{:?}` already exists, resolve it manually",
                         dest
                     );
                 }
@@ -152,7 +154,7 @@ fn symlink_file(target: &PathBuf, dest: &PathBuf) -> Result<()> {
                 }
                 _ => {
                     eprintln!(
-                        "ERROR: Could not symlink `{:?}` to `{:?}`. {}",
+                        "ERROR: Failed to symlink `{:?}` to `{:?}`. {}",
                         target, dest, err
                     );
                 }
