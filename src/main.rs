@@ -23,7 +23,7 @@ struct Manifest {
 #[derive(Debug, Deserialize, Serialize)]
 struct File {
     target: PathBuf,
-    dest: PathBuf,
+    dest: Option<PathBuf>,
     template: Option<PathBuf>,
 }
 
@@ -59,7 +59,7 @@ fn main() -> Result<()> {
         if let Some(template) = file.template {
             generate_template(&manifest.config, template, &file.target)?;
         }
-        symlink_file(&file.target, &file.dest)?;
+        symlink_files(&file.target, &file.dest.unwrap_or(".config".into()))?;
     }
 
     Ok(())
@@ -131,25 +131,28 @@ fn generate_template(
     Ok(())
 }
 
-fn symlink_file(target: &Path, dest: &Path) -> Result<()> {
-    let target = &target.canonicalize()?;
+fn symlink_files(target: &Path, dest: &Path) -> Result<()> {
+    let home_dir = std::env::var("HOME")?;
+    let dest = PathBuf::from(home_dir).join(dest).join(target);
+    if !dest.parent().unwrap().exists() {
+        create_dir_all(dest.parent().unwrap())?;
+    }
+    let target = target.canonicalize()?;
     if target.exists() {
-        match symlink(target, dest) {
+        match symlink(&target, &dest) {
             Ok(()) => {
                 println!("INFO: Symlinked `{:?}` -> `{:?}`", target, dest);
             }
             Err(err) => match err.kind() {
                 ErrorKind::AlreadyExists => {
-                    println!(
-                        "WARNING: Destination `{:?}` already exists, resolve it manually",
-                        dest
-                    );
-                }
-                ErrorKind::NotFound => {
-                    let dirpath = dest.parent().unwrap();
-                    println!("INFO: Creating directory `{:?}`", dirpath);
-                    create_dir_all(dirpath)?;
-                    symlink(target, dest)?;
+                    if dest.is_symlink() {
+                        println!("WARNING: Destination `{:?}` already symlinked", dest);
+                    } else {
+                        eprintln!(
+                            "ERROR: Destination `{:?}` already exists, resolve it manually",
+                            dest
+                        );
+                    }
                 }
                 _ => {
                     eprintln!(
