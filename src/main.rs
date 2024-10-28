@@ -59,7 +59,7 @@ fn main() -> Result<()> {
         if let Some(template) = file.template {
             generate_template(&manifest.config, template, &file.target)?;
         }
-        symlink_files(&file.target, &file.dest.unwrap_or(".config".into()))?;
+        symlink_files(&file.target, &file.dest.unwrap_or("".into()))?;
     }
 
     Ok(())
