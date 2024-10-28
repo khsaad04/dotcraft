@@ -150,14 +150,10 @@ fn symlink_file(target: &Path, dest: &Path) -> Result<()> {
             }
             Err(err) => match err.kind() {
                 ErrorKind::AlreadyExists => {
-                    if dest.is_symlink() {
-                        println!("WARNING: Destination `{:?}` already symlinked", dest);
-                    } else {
-                        eprintln!(
-                            "ERROR: Destination `{:?}` already exists, resolve it manually",
-                            dest
-                        );
-                    }
+                    println!(
+                        "WARNING: Destination `{:?}` is probably already symlinked",
+                        dest
+                    );
                 }
                 _ => {
                     eprintln!(
