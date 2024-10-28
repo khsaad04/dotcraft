@@ -12,7 +12,6 @@ use std::{
     path::{Path, PathBuf},
     str::FromStr,
 };
-use tinytemplate::TinyTemplate;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Manifest {
@@ -119,13 +118,11 @@ fn generate_template(
     let template_path = template.to_str().unwrap();
     let data = fs::read_to_string(template_path).context("Failed to parse template file")?;
 
-    let mut engine = TinyTemplate::new();
+    let mut engine = upon::Engine::new();
     engine
         .add_template(template_path, &data)
         .context("Failed to add template to template engine")?;
-    let rendered = engine
-        .render(template_path, &config)
-        .context("Failed to render the template")?;
+    let rendered = engine.template(template_path).render(config).to_string()?;
     fs::write(target, rendered)?;
     println!("INFO: Generated `{:?}` template", template);
     Ok(())
