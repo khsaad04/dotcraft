@@ -16,6 +16,7 @@ use std::{
 #[derive(Debug, Deserialize, Serialize)]
 struct Manifest {
     config: HashMap<String, String>,
+    priority_files: Option<HashMap<String, File>>,
     files: HashMap<String, File>,
 }
 
@@ -54,13 +55,20 @@ fn main() -> Result<()> {
 
     generate_base16_colors(&mut manifest.config, &theme.source.to_hex())?;
 
-    for (_, file) in manifest.files.into_iter() {
-        if let Some(template) = file.template {
-            generate_template(&manifest.config, template, &file.target)?;
-        }
-        symlink_file(&file.target, &file.dest.unwrap_or("".into()))?;
+    if let Some(priority_files) = manifest.priority_files {
+        parse_files(&priority_files, &manifest.config)?;
     }
+    parse_files(&manifest.files, &manifest.config)?;
+    Ok(())
+}
 
+fn parse_files(files: &HashMap<String, File>, config: &HashMap<String, String>) -> Result<()> {
+    for (_, file) in files.iter() {
+        if let Some(template) = &file.template {
+            generate_template(config, template, &file.target)?;
+        }
+        symlink_file(&file.target, &file.dest.clone().unwrap_or("".into()))?;
+    }
     Ok(())
 }
 
@@ -111,8 +119,8 @@ fn blend_color(first: &str, second: &str, weight: f32) -> Result<String> {
 
 fn generate_template(
     config: &HashMap<String, String>,
-    template: PathBuf,
-    target: &PathBuf,
+    template: &Path,
+    target: &Path,
 ) -> Result<()> {
     let template = template.canonicalize()?;
     let template_path = template.to_str().unwrap();
