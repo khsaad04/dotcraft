@@ -53,19 +53,19 @@ fn main() -> Result<()> {
         manifest.config.insert(k, v.to_hex());
     }
 
-    generate_base16(&mut manifest.config, &theme.source.to_hex())?;
+    generate_base16_colors(&mut manifest.config, &theme.source.to_hex())?;
 
     for (_, file) in manifest.files.into_iter() {
         if let Some(template) = file.template {
             generate_template(&manifest.config, template, &file.target)?;
         }
-        symlink_files(&file.target, &file.dest.unwrap_or("".into()))?;
+        symlink_file(&file.target, &file.dest.unwrap_or("".into()))?;
     }
 
     Ok(())
 }
 
-fn generate_base16(config: &mut HashMap<String, String>, source_color: &str) -> Result<()> {
+fn generate_base16_colors(config: &mut HashMap<String, String>, source_color: &str) -> Result<()> {
     let base16: [(&str, &str); 16] = [
         ("base0", "000000"),
         ("base1", "ff0000"),
@@ -131,7 +131,7 @@ fn generate_template(
     Ok(())
 }
 
-fn symlink_files(target: &Path, dest: &Path) -> Result<()> {
+fn symlink_file(target: &Path, dest: &Path) -> Result<()> {
     let home_dir = std::env::var("HOME")?;
     let dest = PathBuf::from(home_dir).join(dest).join(target);
     if !dest.parent().unwrap().exists() {
