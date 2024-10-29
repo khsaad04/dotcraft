@@ -1,4 +1,4 @@
-use color_eyre::eyre::{Context, Result};
+use color_eyre::eyre::{Context, ContextCompat, Result};
 use material_colors::{
     image::{FilterType, ImageReader},
     theme::ThemeBuilder,
@@ -29,22 +29,22 @@ struct File {
 fn main() -> Result<()> {
     color_eyre::install()?;
 
-    let manifest_path = PathBuf::from_str("Manifest.toml")?.canonicalize()?;
-    if !manifest_path.exists() {
-        eprintln!("ERROR: Manifest.toml not found");
-    }
-    let mut manifest: Manifest = toml::from_str(&fs::read_to_string(manifest_path)?)
-        .context("ERROR: Failed to parse Manifest.toml")?;
+    let manifest_path = PathBuf::from_str("Manifest.toml")?
+        .canonicalize()
+        .context("Manifest.toml not found")?;
+    let mut manifest: Manifest = toml::from_str(
+        &fs::read_to_string(manifest_path).context("Failed to read file Manifest.toml")?,
+    )
+    .context("ERROR: Failed to parse Manifest.toml")?;
 
     let wallpaper = manifest
         .config
         .get("wallpaper")
-        .expect("ERROR: config wallpaper not found");
-    let wp_path = PathBuf::from_str(wallpaper)?;
-    if !wp_path.exists() {
-        eprintln!("ERROR: Wallpaper `{:?}` not found", wp_path);
-    }
-    let mut image = ImageReader::open(wallpaper)?;
+        .context("config wallpaper not found")?;
+    let wp_path = PathBuf::from_str(wallpaper)?
+        .canonicalize()
+        .context(format!("Wallpaper {:?} not found", wallpaper))?;
+    let mut image = ImageReader::open(wp_path)?;
     image.resize(128, 128, FilterType::Lanczos3);
     let theme = ThemeBuilder::with_source(ImageReader::extract_color(&image)).build();
 
@@ -65,7 +65,10 @@ fn parse_files(files: &HashMap<String, File>, config: &HashMap<String, String>) 
         if !dest.parent().unwrap().exists() {
             create_dir_all(dest.parent().unwrap())?;
         }
-        let target = file.target.canonicalize()?;
+        let target = file
+            .target
+            .canonicalize()
+            .context(format!("Target {:?} not found", &file.target))?;
         if let Some(template) = &file.template {
             generate_template(config, template, &target)?;
         }
@@ -79,17 +82,24 @@ fn generate_template(
     template: &Path,
     target: &Path,
 ) -> Result<()> {
-    let template = template.canonicalize()?;
+    let template = template
+        .canonicalize()
+        .context(format!("Template {:?} not found", &template))?;
     let template_path = template.to_str().unwrap();
-    let data = fs::read_to_string(template_path).context("Failed to parse template file")?;
+    let data = fs::read_to_string(template_path)
+        .context(format!("Failed to parse template {:?}", template_path))?;
 
     let mut engine = upon::Engine::new();
     engine
         .add_template(template_path, &data)
         .context("Failed to add template to template engine")?;
-    let rendered = engine.template(template_path).render(config).to_string()?;
+    let rendered = engine
+        .template(template_path)
+        .render(config)
+        .to_string()
+        .context(format!("Failed to render template {:?}", template_path))?;
     fs::write(target, rendered)?;
-    println!("INFO: Generated `{:?}` template", template);
+    println!("INFO: Generated {:?} template", template);
     Ok(())
 }
 
@@ -113,22 +123,29 @@ fn symlink_file(target: &Path, dest: &Path) -> Result<()> {
     if target.exists() {
         match symlink(target, dest) {
             Ok(()) => {
-                println!("INFO: Symlinked `{:?}` -> `{:?}`", target, dest);
+                println!("INFO: Symlinked {:?} -> {:?}", target, dest);
             }
             Err(err) => match err.kind() {
                 ErrorKind::AlreadyExists => {
-                    println!("WARNING: Destination `{:?}` already symlinked", dest);
+                    if dest.is_symlink() {
+                        println!(
+                            "WARNING: Destination {:?} already symlinked. Skipping",
+                            dest
+                        );
+                    } else {
+                        eprintln!("ERROR: Destination {:?} exists but it's not a symlink. Please resolve manually", dest);
+                    }
                 }
                 _ => {
                     eprintln!(
-                        "ERROR: Failed to symlink `{:?}` to `{:?}`. {}",
+                        "ERROR: Failed to symlink {:?} -> {:?}. {}",
                         target, dest, err
                     );
                 }
             },
         }
     } else {
-        eprintln!("ERROR: Target `{:?}` not found", target);
+        eprintln!("ERROR: Target {:?} not found", target);
     }
     Ok(())
 }
