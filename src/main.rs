@@ -16,7 +16,6 @@ use std::{
 #[derive(Debug, Deserialize, Serialize)]
 struct Manifest {
     config: HashMap<String, String>,
-    priority_files: Option<HashMap<String, File>>,
     files: HashMap<String, File>,
 }
 
@@ -54,10 +53,6 @@ fn main() -> Result<()> {
     }
 
     generate_base16_colors(&mut manifest.config, &theme.source.to_hex())?;
-
-    if let Some(priority_files) = manifest.priority_files {
-        parse_files(&priority_files, &manifest.config)?;
-    }
     parse_files(&manifest.files, &manifest.config)?;
     Ok(())
 }
