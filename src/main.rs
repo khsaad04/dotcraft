@@ -64,10 +64,76 @@ fn main() -> Result<()> {
 
 fn parse_files(files: &HashMap<String, File>, config: &HashMap<String, String>) -> Result<()> {
     for (_, file) in files.iter() {
-        if let Some(template) = &file.template {
-            generate_template(config, template, &file.target)?;
+        let dest_path = file.dest.clone().unwrap_or("".into());
+        let home_dir = std::env::var("HOME")?;
+        let dest = PathBuf::from(home_dir).join(dest_path).join(&file.target);
+        if !dest.parent().unwrap().exists() {
+            create_dir_all(dest.parent().unwrap())?;
         }
-        symlink_file(&file.target, &file.dest.clone().unwrap_or("".into()))?;
+        let target = file.target.canonicalize()?;
+        if let Some(template) = &file.template {
+            generate_template(config, template, &target)?;
+        }
+        symlink_dir_all(&target, &dest)?;
+    }
+    Ok(())
+}
+
+fn generate_template(
+    config: &HashMap<String, String>,
+    template: &Path,
+    target: &Path,
+) -> Result<()> {
+    let template = template.canonicalize()?;
+    let template_path = template.to_str().unwrap();
+    let data = fs::read_to_string(template_path).context("Failed to parse template file")?;
+
+    let mut engine = upon::Engine::new();
+    engine
+        .add_template(template_path, &data)
+        .context("Failed to add template to template engine")?;
+    let rendered = engine.template(template_path).render(config).to_string()?;
+    fs::write(target, rendered)?;
+    println!("INFO: Generated `{:?}` template", template);
+    Ok(())
+}
+
+fn symlink_dir_all(target: &Path, dest: &Path) -> Result<()> {
+    if target.is_dir() {
+        for entry in fs::read_dir(target)? {
+            let entry = entry?;
+            let dest = &dest.join(entry.path().file_name().unwrap());
+            if !dest.parent().unwrap().exists() {
+                create_dir_all(dest.parent().unwrap())?;
+            }
+            symlink_dir_all(&entry.path(), dest)?;
+        }
+    } else {
+        symlink_file(target, dest)?;
+    }
+    Ok(())
+}
+
+fn symlink_file(target: &Path, dest: &Path) -> Result<()> {
+    if target.exists() {
+        match symlink(target, dest) {
+            Ok(()) => {
+                println!("INFO: Symlinked `{:?}` -> `{:?}`", target, dest);
+            }
+            Err(err) => match err.kind() {
+                ErrorKind::AlreadyExists => {
+                    println!("WARNING: Destination `{:?}` already symlinked", dest);
+                }
+                _ => {
+                    eprintln!(
+                        "ERROR: Failed to symlink `{:?}` to `{:?}`. {}",
+                        target, dest, err
+                    );
+                }
+            },
+        }
+    } else {
+        eprintln!("ERROR: Target `{:?}` not found", target);
     }
     Ok(())
 }
@@ -115,56 +181,4 @@ fn blend_color(first: &str, second: &str, weight: f32) -> Result<String> {
     let g = (first_g as f32 * w1 + second_g as f32 * w2) as i64;
     let b = (first_b as f32 * w1 + second_b as f32 * w2) as i64;
     Ok(format!("{:x}{:x}{:x}", r, g, b).to_string())
-}
-
-fn generate_template(
-    config: &HashMap<String, String>,
-    template: &Path,
-    target: &Path,
-) -> Result<()> {
-    let template = template.canonicalize()?;
-    let template_path = template.to_str().unwrap();
-    let data = fs::read_to_string(template_path).context("Failed to parse template file")?;
-
-    let mut engine = upon::Engine::new();
-    engine
-        .add_template(template_path, &data)
-        .context("Failed to add template to template engine")?;
-    let rendered = engine.template(template_path).render(config).to_string()?;
-    fs::write(target, rendered)?;
-    println!("INFO: Generated `{:?}` template", template);
-    Ok(())
-}
-
-fn symlink_file(target: &Path, dest: &Path) -> Result<()> {
-    let home_dir = std::env::var("HOME")?;
-    let dest = PathBuf::from(home_dir).join(dest).join(target);
-    if !dest.parent().unwrap().exists() {
-        create_dir_all(dest.parent().unwrap())?;
-    }
-    let target = target.canonicalize()?;
-    if target.exists() {
-        match symlink(&target, &dest) {
-            Ok(()) => {
-                println!("INFO: Symlinked `{:?}` -> `{:?}`", target, dest);
-            }
-            Err(err) => match err.kind() {
-                ErrorKind::AlreadyExists => {
-                    println!(
-                        "WARNING: Destination `{:?}` is probably already symlinked",
-                        dest
-                    );
-                }
-                _ => {
-                    eprintln!(
-                        "ERROR: Failed to symlink `{:?}` to `{:?}`. {}",
-                        target, dest, err
-                    );
-                }
-            },
-        }
-    } else {
-        eprintln!("ERROR: Target `{:?}` not found", target);
-    }
-    Ok(())
 }
