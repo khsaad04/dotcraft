@@ -44,6 +44,10 @@ fn main() -> Result<()> {
     let wp_path = PathBuf::from_str(wallpaper)?
         .canonicalize()
         .context(format!("Wallpaper {:?} not found", wallpaper))?;
+    manifest.config.insert(
+        "wallpaper".to_string(),
+        wp_path.to_str().unwrap().to_string(),
+    );
     let mut image = ImageReader::open(wp_path)?;
     image.resize(128, 128, FilterType::Lanczos3);
     let theme = ThemeBuilder::with_source(ImageReader::extract_color(&image)).build();
@@ -181,7 +185,8 @@ fn generate_base16_colors(config: &mut HashMap<String, String>, source_color: &s
 }
 
 fn blend_color(first: &str, second: &str, weight: f32) -> Result<String> {
-    let w1 = weight;
+    let w = weight * 2.0 - 1.0;
+    let w1 = (w / 2.0) + 0.5;
     let w2 = 1.0 - w1;
     let first_r = i64::from_str_radix(&first[..2], 16)?;
     let first_g = i64::from_str_radix(&first[2..4], 16)?;
@@ -189,8 +194,8 @@ fn blend_color(first: &str, second: &str, weight: f32) -> Result<String> {
     let second_r = i64::from_str_radix(&second[..2], 16)?;
     let second_g = i64::from_str_radix(&second[2..4], 16)?;
     let second_b = i64::from_str_radix(&second[4..6], 16)?;
-    let r = (first_r as f32 * w1 + second_r as f32 * w2) as i64;
-    let g = (first_g as f32 * w1 + second_g as f32 * w2) as i64;
-    let b = (first_b as f32 * w1 + second_b as f32 * w2) as i64;
+    let r = (first_r as f32 * w1 + second_r as f32 * w2).clamp(16.0, 255.0) as i64;
+    let g = (first_g as f32 * w1 + second_g as f32 * w2).clamp(16.0, 255.0) as i64;
+    let b = (first_b as f32 * w1 + second_b as f32 * w2).clamp(16.0, 255.0) as i64;
     Ok(format!("{:x}{:x}{:x}", r, g, b).to_string())
 }
