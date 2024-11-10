@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+clap = { version = "4.5.20", features = ["derive"] }
 color-eyre = "0.6.3"
 material-colors = { version = "0.4.2", features = ["image"] }
 serde = { version = "1.0.213", features = ["derive"] }

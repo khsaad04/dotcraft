@@ -1,4 +1,8 @@
-use color_eyre::eyre::{Context, ContextCompat, Result};
+mod cli;
+mod colors;
+
+use clap::Parser;
+use color_eyre::eyre::{self, Context, ContextCompat};
 use material_colors::{
     image::{FilterType, ImageReader},
     theme::ThemeBuilder,
@@ -6,8 +10,7 @@ use material_colors::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    fs::{self, create_dir_all},
-    io::ErrorKind,
+    fs, io,
     os::unix::fs::symlink,
     path::{Path, PathBuf},
     str::FromStr,
@@ -26,17 +29,22 @@ struct File {
     template: Option<PathBuf>,
 }
 
-fn main() -> Result<()> {
+fn main() -> eyre::Result<()> {
     color_eyre::install()?;
+    let cli = cli::Cli::parse();
 
-    let manifest_path = PathBuf::from_str("Manifest.toml")?
+    // Parse Manifest file
+    let manifest_path = cli
+        .manifest
         .canonicalize()
         .context("Manifest.toml not found")?;
+    std::env::set_current_dir(manifest_path.parent().unwrap())?;
     let mut manifest: Manifest = toml::from_str(
         &fs::read_to_string(manifest_path).context("Failed to read file Manifest.toml")?,
     )
     .context("ERROR: Failed to parse Manifest.toml")?;
 
+    // Generate color scheme from wallpaper
     let wallpaper = manifest
         .config
         .get("wallpaper")
@@ -55,19 +63,35 @@ fn main() -> Result<()> {
     for (k, v) in theme.schemes.dark.into_iter() {
         manifest.config.insert(k, v.to_hex());
     }
+    colors::generate_base16_colors(&mut manifest.config, &theme.source.to_hex())?;
 
-    generate_base16_colors(&mut manifest.config, &theme.source.to_hex())?;
-    parse_files(&manifest.files, &manifest.config)?;
+    // Execute commands
+    match &cli.command {
+        Some(cli::Commands::Sync { force }) => {
+            sync_files(&manifest.files, &manifest.config, force)?;
+        }
+        Some(cli::Commands::Link { force }) => {
+            link_files(&manifest.files, force)?;
+        }
+        Some(cli::Commands::Generate) => {
+            generate_templates(&manifest.files, &manifest.config)?;
+        }
+        None => {}
+    }
     Ok(())
 }
 
-fn parse_files(files: &HashMap<String, File>, config: &HashMap<String, String>) -> Result<()> {
+fn sync_files(
+    files: &HashMap<String, File>,
+    config: &HashMap<String, String>,
+    force_flag: &bool,
+) -> eyre::Result<()> {
     for (_, file) in files.iter() {
         let dest_path = file.dest.clone().unwrap_or("".into());
         let home_dir = std::env::var("HOME")?;
         let dest = PathBuf::from(home_dir).join(dest_path).join(&file.target);
         if !dest.parent().unwrap().exists() {
-            create_dir_all(dest.parent().unwrap())?;
+            fs::create_dir_all(dest.parent().unwrap())?;
         }
         let target = file
             .target
@@ -76,7 +100,40 @@ fn parse_files(files: &HashMap<String, File>, config: &HashMap<String, String>) 
         if let Some(template) = &file.template {
             generate_template(config, template, &target)?;
         }
-        symlink_dir_all(&target, &dest)?;
+        symlink_dir_all(&target, &dest, force_flag)?;
+    }
+    Ok(())
+}
+
+fn link_files(files: &HashMap<String, File>, force_flag: &bool) -> eyre::Result<()> {
+    for (_, file) in files.iter() {
+        let dest_path = file.dest.clone().unwrap_or("".into());
+        let home_dir = std::env::var("HOME")?;
+        let dest = PathBuf::from(home_dir).join(dest_path).join(&file.target);
+        if !dest.parent().unwrap().exists() {
+            fs::create_dir_all(dest.parent().unwrap())?;
+        }
+        let target = file
+            .target
+            .canonicalize()
+            .context(format!("Target {:?} not found", &file.target))?;
+        symlink_dir_all(&target, &dest, force_flag)?;
+    }
+    Ok(())
+}
+
+fn generate_templates(
+    files: &HashMap<String, File>,
+    config: &HashMap<String, String>,
+) -> eyre::Result<()> {
+    for (_, file) in files.iter() {
+        let target = file
+            .target
+            .canonicalize()
+            .context(format!("Target {:?} not found", &file.target))?;
+        if let Some(template) = &file.template {
+            generate_template(config, template, &target)?;
+        }
     }
     Ok(())
 }
@@ -85,7 +142,7 @@ fn generate_template(
     config: &HashMap<String, String>,
     template: &Path,
     target: &Path,
-) -> Result<()> {
+) -> eyre::Result<()> {
     let template = template
         .canonicalize()
         .context(format!("Template {:?} not found", &template))?;
@@ -107,30 +164,37 @@ fn generate_template(
     Ok(())
 }
 
-fn symlink_dir_all(target: &Path, dest: &Path) -> Result<()> {
+fn symlink_dir_all(target: &Path, dest: &Path, force_flag: &bool) -> eyre::Result<()> {
     if target.is_dir() {
         for entry in fs::read_dir(target)? {
             let entry = entry?;
             let dest = &dest.join(entry.path().file_name().unwrap());
             if !dest.parent().unwrap().exists() {
-                create_dir_all(dest.parent().unwrap())?;
+                fs::create_dir_all(dest.parent().unwrap())?;
             }
-            symlink_dir_all(&entry.path(), dest)?;
+            symlink_dir_all(&entry.path(), dest, force_flag)?;
         }
     } else {
-        symlink_file(target, dest)?;
+        symlink_file(target, dest, force_flag)?;
     }
     Ok(())
 }
 
-fn symlink_file(target: &Path, dest: &Path) -> Result<()> {
+fn symlink_file(target: &Path, dest: &Path, force_flag: &bool) -> eyre::Result<()> {
     if target.exists() {
         match symlink(target, dest) {
             Ok(()) => {
                 println!("INFO: Symlinked {:?} -> {:?}", target, dest);
             }
             Err(err) => match err.kind() {
-                ErrorKind::AlreadyExists => {
+                io::ErrorKind::AlreadyExists => {
+                    if *force_flag {
+                        std::fs::remove_file(dest)?;
+                        println!("WARNING: Destination {:?} already exists. Removing", dest);
+                        symlink(target, dest)?;
+                        println!("INFO: Symlinked {:?} -> {:?}", target, dest);
+                        return Ok(());
+                    }
                     if dest.is_symlink() {
                         println!(
                             "WARNING: Destination {:?} already symlinked. Skipping",
@@ -152,50 +216,4 @@ fn symlink_file(target: &Path, dest: &Path) -> Result<()> {
         eprintln!("ERROR: Target {:?} not found", target);
     }
     Ok(())
-}
-
-fn generate_base16_colors(config: &mut HashMap<String, String>, source_color: &str) -> Result<()> {
-    let base16: [(&str, &str); 16] = [
-        ("base0", "000000"),
-        ("base1", "ff0000"),
-        ("base2", "00ff00"),
-        ("base3", "ffff00"),
-        ("base4", "0000ff"),
-        ("base5", "ff00ff"),
-        ("base6", "00ffff"),
-        ("base7", "ffffff"),
-        ("base8", "000000"),
-        ("base9", "ff0000"),
-        ("base10", "00ff00"),
-        ("base11", "ffff00"),
-        ("base12", "0000ff"),
-        ("base13", "ff00ff"),
-        ("base14", "00ffff"),
-        ("base15", "ffffff"),
-    ];
-    for (name, value) in base16.into_iter() {
-        let mut weight: f32 = 0.3;
-        if name[4..].parse::<usize>().unwrap() > 7 {
-            weight = 0.5;
-        }
-        let new_color = blend_color(value, source_color, weight)?;
-        config.insert(name.to_string(), new_color);
-    }
-    Ok(())
-}
-
-fn blend_color(first: &str, second: &str, weight: f32) -> Result<String> {
-    let w = weight * 2.0 - 1.0;
-    let w1 = (w / 2.0) + 0.5;
-    let w2 = 1.0 - w1;
-    let first_r = i64::from_str_radix(&first[..2], 16)?;
-    let first_g = i64::from_str_radix(&first[2..4], 16)?;
-    let first_b = i64::from_str_radix(&first[4..6], 16)?;
-    let second_r = i64::from_str_radix(&second[..2], 16)?;
-    let second_g = i64::from_str_radix(&second[2..4], 16)?;
-    let second_b = i64::from_str_radix(&second[4..6], 16)?;
-    let r = (first_r as f32 * w1 + second_r as f32 * w2).clamp(16.0, 255.0) as i64;
-    let g = (first_g as f32 * w1 + second_g as f32 * w2).clamp(16.0, 255.0) as i64;
-    let b = (first_b as f32 * w1 + second_b as f32 * w2).clamp(16.0, 255.0) as i64;
-    Ok(format!("{:x}{:x}{:x}", r, g, b).to_string())
 }
