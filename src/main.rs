@@ -3,10 +3,6 @@ mod colors;
 
 use clap::Parser;
 use color_eyre::eyre::{self, Context, ContextCompat};
-use material_colors::{
-    image::{FilterType, ImageReader},
-    theme::ThemeBuilder,
-};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -56,14 +52,7 @@ fn main() -> eyre::Result<()> {
         "wallpaper".to_string(),
         wp_path.to_str().unwrap().to_string(),
     );
-    let mut image = ImageReader::open(wp_path)?;
-    image.resize(128, 128, FilterType::Lanczos3);
-    let theme = ThemeBuilder::with_source(ImageReader::extract_color(&image)).build();
-
-    for (k, v) in theme.schemes.dark.into_iter() {
-        manifest.config.insert(k, v.to_hex());
-    }
-    colors::generate_base16_colors(&mut manifest.config, &theme.source.to_hex())?;
+    colors::generate_material_colors(wp_path, &mut manifest)?;
 
     // Execute commands
     match &cli.command {
