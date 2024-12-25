@@ -2,7 +2,8 @@ mod cli;
 mod colors;
 
 use clap::Parser;
-use color_eyre::eyre::{self, Context, ContextCompat};
+use color_eyre::eyre::{self, Context};
+use core::panic;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -41,18 +42,20 @@ fn main() -> eyre::Result<()> {
     .context("ERROR: Failed to parse Manifest.toml")?;
 
     // Generate color scheme from wallpaper
-    let wallpaper = manifest
-        .config
-        .get("wallpaper")
-        .context("config wallpaper not found")?;
-    let wp_path = PathBuf::from_str(wallpaper)?
-        .canonicalize()
-        .context(format!("Wallpaper {:?} not found", wallpaper))?;
-    manifest.config.insert(
-        "wallpaper".to_string(),
-        wp_path.to_str().unwrap().to_string(),
-    );
-    colors::generate_material_colors(wp_path, &mut manifest)?;
+    if let Some(wallpaper) = manifest.config.get("wallpaper") {
+        let wp_path = PathBuf::from_str(wallpaper)?
+            .canonicalize()
+            .context(format!("Wallpaper {:?} not found", wallpaper))?;
+        manifest.config.insert(
+            "wallpaper".to_string(),
+            wp_path.to_str().unwrap().to_string(),
+        );
+        colors::generate_material_colors(wp_path, &mut manifest)?;
+    } else if has_templates(&manifest) {
+        panic!("`wallpaper` is not set. Needed for color scheme generation");
+    } else {
+        println!("WARNING: Skipping color scheme generation.");
+    }
 
     // Execute commands
     match &cli.command {
@@ -63,11 +66,24 @@ fn main() -> eyre::Result<()> {
             link_files(&manifest.files, force)?;
         }
         Some(cli::Commands::Generate) => {
-            generate_templates(&manifest.files, &manifest.config)?;
+            if has_templates(&manifest) {
+                generate_templates(&manifest.files, &manifest.config)?;
+            } else {
+                println!("WARNING: There are no templates. Skipping template generation");
+            }
         }
         None => {}
     }
     Ok(())
+}
+
+fn has_templates(manifest: &Manifest) -> bool {
+    for (_, file) in manifest.files.iter() {
+        if file.template.is_some() {
+            return true;
+        }
+    }
+    false
 }
 
 fn sync_files(

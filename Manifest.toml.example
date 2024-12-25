@@ -1,5 +1,8 @@
-[config]
-wallpaper = "wp.jpg"
+[config] # Required, even without any config vars
+wallpaper = "wp.jpg" # Required only if templates are in use
 
 [files]
 test = {target = "test", dest = "dest", template = "temp"}
+
+# `temp` is generated to `target`
+# `./test` is symlinked to `./dest/test`
