@@ -3,7 +3,6 @@ mod colors;
 
 use clap::Parser;
 use color_eyre::eyre::{self, Context};
-use core::panic;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -21,9 +20,9 @@ struct Manifest {
 
 #[derive(Debug, Deserialize, Serialize)]
 struct File {
-    target: PathBuf,
-    dest: Option<PathBuf>,
-    template: Option<PathBuf>,
+    target: String,
+    dest: Option<String>,
+    template: Option<String>,
 }
 
 fn main() -> eyre::Result<()> {
@@ -58,21 +57,42 @@ fn main() -> eyre::Result<()> {
     }
 
     // Execute commands
-    match &cli.command {
-        Some(cli::Commands::Sync { force }) => {
-            sync_files(&manifest.files, &manifest.config, force)?;
+    for (_, file) in manifest.files.iter() {
+        let target_path = PathBuf::from(&file.target)
+            .canonicalize()
+            .context(format!("Target {:?} not found", &file.target))?;
+        let home_dir = std::env::var("HOME")?;
+        let dest_path = PathBuf::from(home_dir)
+            .join(file.dest.clone().unwrap_or("".into()))
+            .join(&file.target);
+        if !dest_path.parent().unwrap().exists() {
+            fs::create_dir_all(dest_path.parent().unwrap())?;
         }
-        Some(cli::Commands::Link { force }) => {
-            link_files(&manifest.files, force)?;
+        let mut template_path = PathBuf::new();
+        if let Some(template) = &file.template {
+            template_path = PathBuf::from(template)
+                .canonicalize()
+                .context(format!("Template {:?} not found", template))?;
         }
-        Some(cli::Commands::Generate) => {
-            if has_templates(&manifest) {
-                generate_templates(&manifest.files, &manifest.config)?;
-            } else {
-                println!("WARNING: There are no templates. Skipping template generation");
+        match &cli.command {
+            Some(cli::Commands::Sync { force }) => {
+                if file.template.is_some() {
+                    generate_template(&manifest.config, &template_path, &target_path)?;
+                }
+                symlink_dir_all(&target_path, &dest_path, force)?;
+            }
+            Some(cli::Commands::Link { force }) => {
+                symlink_dir_all(&target_path, &dest_path, force)?;
+            }
+            Some(cli::Commands::Generate) => {
+                if file.template.is_some() {
+                    generate_template(&manifest.config, &template_path, &target_path)?;
+                }
+            }
+            None => {
+                unreachable!()
             }
         }
-        None => {}
     }
     Ok(())
 }
@@ -86,84 +106,24 @@ fn has_templates(manifest: &Manifest) -> bool {
     false
 }
 
-fn sync_files(
-    files: &HashMap<String, File>,
-    config: &HashMap<String, String>,
-    force_flag: &bool,
-) -> eyre::Result<()> {
-    for (_, file) in files.iter() {
-        let dest_path = file.dest.clone().unwrap_or("".into());
-        let home_dir = std::env::var("HOME")?;
-        let dest = PathBuf::from(home_dir).join(dest_path).join(&file.target);
-        if !dest.parent().unwrap().exists() {
-            fs::create_dir_all(dest.parent().unwrap())?;
-        }
-        let target = file
-            .target
-            .canonicalize()
-            .context(format!("Target {:?} not found", &file.target))?;
-        if let Some(template) = &file.template {
-            generate_template(config, template, &target)?;
-        }
-        symlink_dir_all(&target, &dest, force_flag)?;
-    }
-    Ok(())
-}
-
-fn link_files(files: &HashMap<String, File>, force_flag: &bool) -> eyre::Result<()> {
-    for (_, file) in files.iter() {
-        let dest_path = file.dest.clone().unwrap_or("".into());
-        let home_dir = std::env::var("HOME")?;
-        let dest = PathBuf::from(home_dir).join(dest_path).join(&file.target);
-        if !dest.parent().unwrap().exists() {
-            fs::create_dir_all(dest.parent().unwrap())?;
-        }
-        let target = file
-            .target
-            .canonicalize()
-            .context(format!("Target {:?} not found", &file.target))?;
-        symlink_dir_all(&target, &dest, force_flag)?;
-    }
-    Ok(())
-}
-
-fn generate_templates(
-    files: &HashMap<String, File>,
-    config: &HashMap<String, String>,
-) -> eyre::Result<()> {
-    for (_, file) in files.iter() {
-        let target = file
-            .target
-            .canonicalize()
-            .context(format!("Target {:?} not found", &file.target))?;
-        if let Some(template) = &file.template {
-            generate_template(config, template, &target)?;
-        }
-    }
-    Ok(())
-}
-
 fn generate_template(
     config: &HashMap<String, String>,
     template: &Path,
     target: &Path,
 ) -> eyre::Result<()> {
-    let template = template
-        .canonicalize()
-        .context(format!("Template {:?} not found", &template))?;
-    let template_path = template.to_str().unwrap();
-    let data = fs::read_to_string(template_path)
-        .context(format!("Failed to parse template {:?}", template_path))?;
+    let data =
+        fs::read_to_string(template).context(format!("Failed to parse template {:?}", template))?;
 
     let mut engine = upon::Engine::new();
     engine
-        .add_template(template_path, &data)
+        .add_template(template.to_str().unwrap(), &data)
         .context("Failed to add template to template engine")?;
     let rendered = engine
-        .template(template_path)
+        .template(template.to_str().unwrap())
         .render(config)
         .to_string()
-        .context(format!("Failed to render template {:?}", template_path))?;
+        .context(format!("Failed to render template {:?}", template))?;
+
     fs::write(target, rendered)?;
     println!("INFO: Generated {:?} template", template);
     Ok(())
@@ -186,39 +146,35 @@ fn symlink_dir_all(target: &Path, dest: &Path, force_flag: &bool) -> eyre::Resul
 }
 
 fn symlink_file(target: &Path, dest: &Path, force_flag: &bool) -> eyre::Result<()> {
-    if target.exists() {
-        match symlink(target, dest) {
-            Ok(()) => {
-                println!("INFO: Symlinked {:?} -> {:?}", target, dest);
-            }
-            Err(err) => match err.kind() {
-                io::ErrorKind::AlreadyExists => {
-                    if *force_flag {
-                        std::fs::remove_file(dest)?;
-                        println!("WARNING: Destination {:?} already exists. Removing", dest);
-                        symlink(target, dest)?;
-                        println!("INFO: Symlinked {:?} -> {:?}", target, dest);
-                        return Ok(());
-                    }
-                    if dest.is_symlink() {
-                        println!(
-                            "WARNING: Destination {:?} already symlinked. Skipping",
-                            dest
-                        );
-                    } else {
-                        eprintln!("ERROR: Destination {:?} exists but it's not a symlink. Please resolve manually", dest);
-                    }
-                }
-                _ => {
-                    eprintln!(
-                        "ERROR: Failed to symlink {:?} -> {:?}. {}",
-                        target, dest, err
-                    );
-                }
-            },
+    match symlink(target, dest) {
+        Ok(()) => {
+            println!("INFO: Symlinked {:?} -> {:?}", target, dest);
         }
-    } else {
-        eprintln!("ERROR: Target {:?} not found", target);
+        Err(err) => match err.kind() {
+            io::ErrorKind::AlreadyExists => {
+                if *force_flag {
+                    std::fs::remove_file(dest)?;
+                    println!("WARNING: Destination {:?} already exists. Removing", dest);
+                    symlink(target, dest)?;
+                    println!("INFO: Symlinked {:?} -> {:?}", target, dest);
+                    return Ok(());
+                }
+                if dest.is_symlink() {
+                    println!(
+                        "WARNING: Destination {:?} already symlinked. Skipping",
+                        dest
+                    );
+                } else {
+                    eprintln!("ERROR: Destination {:?} exists but it's not a symlink. Please resolve manually", dest);
+                }
+            }
+            _ => {
+                eprintln!(
+                    "ERROR: Failed to symlink {:?} -> {:?}. {}",
+                    target, dest, err
+                );
+            }
+        },
     }
     Ok(())
 }
