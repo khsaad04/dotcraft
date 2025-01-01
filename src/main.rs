@@ -3,6 +3,7 @@ mod colors;
 
 use clap::Parser;
 use color_eyre::eyre::{self, Context};
+use glob::glob;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -58,39 +59,59 @@ fn main() -> eyre::Result<()> {
 
     // Execute commands
     for (_, file) in manifest.files.iter() {
-        let target_path = PathBuf::from(&file.target)
-            .canonicalize()
-            .context(format!("Target {:?} not found", &file.target))?;
-        let home_dir = std::env::var("HOME")?;
-        let dest_path = PathBuf::from(home_dir)
-            .join(file.dest.clone().unwrap_or("".into()))
-            .join(&file.target);
-        if !dest_path.parent().unwrap().exists() {
-            fs::create_dir_all(dest_path.parent().unwrap())?;
-        }
-        let mut template_path = PathBuf::new();
-        if let Some(template) = &file.template {
-            template_path = PathBuf::from(template)
+        let globbed_path = glob(&file.target).context(format!(
+            "Failed to parse target `{}`. Invalid glob pattern",
+            &file.target
+        ))?;
+        for entry in globbed_path {
+            let entry = entry?;
+            let target_path = PathBuf::from(&entry)
                 .canonicalize()
-                .context(format!("Template {:?} not found", template))?;
-        }
-        match &cli.command {
-            Some(cli::Commands::Sync { force }) => {
-                if file.template.is_some() {
-                    generate_template(&manifest.config, &template_path, &target_path)?;
+                .context(format!("Target {:?} not found", &entry))?;
+            let home_dir = PathBuf::from(std::env::var("HOME")?);
+            let dest_path = if let Some(dest) = &file.dest {
+                let dest = PathBuf::from(dest);
+                if dest.is_dir() {
+                    home_dir.join(dest).join(entry.iter().last().unwrap())
+                } else {
+                    home_dir.join(dest)
                 }
-                symlink_dir_all(&target_path, &dest_path, force)?;
+            } else {
+                home_dir.join(&entry)
+            };
+            if !dest_path.parent().unwrap().exists() {
+                fs::create_dir_all(dest_path.parent().unwrap())?;
             }
-            Some(cli::Commands::Link { force }) => {
-                symlink_dir_all(&target_path, &dest_path, force)?;
-            }
-            Some(cli::Commands::Generate) => {
-                if file.template.is_some() {
-                    generate_template(&manifest.config, &template_path, &target_path)?;
+            match &cli.command {
+                Some(cli::Commands::Sync { force }) => {
+                    if let Some(template_path) = &file.template {
+                        generate_template(
+                            &manifest.config,
+                            &PathBuf::from(template_path)
+                                .canonicalize()
+                                .context(format!("Template {:?} not found", &template_path))?,
+                            &target_path,
+                        )?;
+                    }
+                    symlink_dir_all(&target_path, &dest_path, force)?;
                 }
-            }
-            None => {
-                unreachable!()
+                Some(cli::Commands::Link { force }) => {
+                    symlink_dir_all(&target_path, &dest_path, force)?;
+                }
+                Some(cli::Commands::Generate) => {
+                    if let Some(template_path) = &file.template {
+                        generate_template(
+                            &manifest.config,
+                            &PathBuf::from(template_path)
+                                .canonicalize()
+                                .context(format!("Template {:?} not found", &template_path))?,
+                            &target_path,
+                        )?;
+                    }
+                }
+                None => {
+                    unreachable!()
+                }
             }
         }
     }
@@ -165,11 +186,11 @@ fn symlink_file(target: &Path, dest: &Path, force_flag: &bool) -> eyre::Result<(
                         dest
                     );
                 } else {
-                    eprintln!("ERROR: Destination {:?} exists but it's not a symlink. Please resolve manually", dest);
+                    println!("ERROR: Destination {:?} exists but it's not a symlink. Please resolve manually", dest);
                 }
             }
             _ => {
-                eprintln!(
+                println!(
                     "ERROR: Failed to symlink {:?} -> {:?}. {}",
                     target, dest, err
                 );
