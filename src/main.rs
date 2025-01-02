@@ -181,40 +181,51 @@ fn symlink_file(target: &Path, dest: &Path, force_flag: &bool) -> eyre::Result<(
                 dest.display()
             );
         }
-        Err(err) => match err.kind() {
-            io::ErrorKind::AlreadyExists => {
-                if *force_flag {
-                    std::fs::remove_file(dest)?;
+        Err(err) => {
+            match err.kind() {
+                io::ErrorKind::AlreadyExists => {
+                    if *force_flag {
+                        std::fs::remove_file(dest)?;
+                        println!(
+                            "WARNING: Destination `{}` already exists. Removing",
+                            dest.display()
+                        );
+                        symlink(target, dest)?;
+                        println!(
+                            "INFO: Symlinked `{}` -> `{}`",
+                            target.display(),
+                            dest.display()
+                        );
+                        return Ok(());
+                    }
+                    if dest.is_symlink() {
+                        let original_path = dest.canonicalize()?;
+                        if target == original_path {
+                            println!(
+                                "WARNING: Destination `{}` already symlinked. Skipping",
+                                dest.display()
+                            );
+                        } else {
+                            println!(
+                                "ERROR: Destination `{}` is symlinked to `{}`. Resolve manually.",
+                                dest.display(),
+                                original_path.display()
+                            );
+                        }
+                    } else {
+                        println!("ERROR: Destination `{}` exists but it's not a symlink. Resolve manually", dest.display());
+                    }
+                }
+                _ => {
                     println!(
-                        "WARNING: Destination `{}` already exists. Removing",
-                        dest.display()
-                    );
-                    symlink(target, dest)?;
-                    println!(
-                        "INFO: Symlinked `{}` -> `{}`",
+                        "ERROR: Failed to symlink `{}` -> `{}`. {}",
                         target.display(),
-                        dest.display()
+                        dest.display(),
+                        err
                     );
-                    return Ok(());
-                }
-                if dest.is_symlink() {
-                    println!(
-                        "WARNING: Destination `{}` already symlinked. Skipping",
-                        dest.display()
-                    );
-                } else {
-                    println!("ERROR: Destination `{}` exists but it's not a symlink. Please resolve manually", dest.display());
                 }
             }
-            _ => {
-                println!(
-                    "ERROR: Failed to symlink `{}` -> `{}`. {}",
-                    target.display(),
-                    dest.display(),
-                    err
-                );
-            }
-        },
+        }
     }
     Ok(())
 }
