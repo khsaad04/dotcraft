@@ -34,18 +34,18 @@ fn main() -> eyre::Result<()> {
     let manifest_path = cli
         .manifest
         .canonicalize()
-        .context("Manifest.toml not found")?;
+        .context(format!("`{}` not found", &cli.manifest.display()))?;
     std::env::set_current_dir(manifest_path.parent().unwrap())?;
     let mut manifest: Manifest = toml::from_str(
         &fs::read_to_string(manifest_path).context("Failed to read file Manifest.toml")?,
     )
-    .context("ERROR: Failed to parse Manifest.toml")?;
+    .context("Failed to parse Manifest.toml")?;
 
     // Generate color scheme from wallpaper
     if let Some(wallpaper) = manifest.config.get("wallpaper") {
         let wp_path = PathBuf::from_str(wallpaper)?
             .canonicalize()
-            .context(format!("Wallpaper {:?} not found", wallpaper))?;
+            .context(format!("Wallpaper `{}` not found", wallpaper))?;
         manifest.config.insert(
             "wallpaper".to_string(),
             wp_path.to_str().unwrap().to_string(),
@@ -67,7 +67,7 @@ fn main() -> eyre::Result<()> {
             let entry = entry?;
             let target_path = PathBuf::from(&entry)
                 .canonicalize()
-                .context(format!("Target {:?} not found", &entry))?;
+                .context(format!("Target `{}` not found", &entry.display()))?;
             let home_dir = PathBuf::from(std::env::var("HOME")?);
             let dest_path = if let Some(dest) = &file.dest {
                 let dest = PathBuf::from(dest);
@@ -89,7 +89,7 @@ fn main() -> eyre::Result<()> {
                             &manifest.config,
                             &PathBuf::from(template_path)
                                 .canonicalize()
-                                .context(format!("Template {:?} not found", &template_path))?,
+                                .context(format!("Template `{}` not found", &template_path))?,
                             &target_path,
                         )?;
                     }
@@ -104,7 +104,7 @@ fn main() -> eyre::Result<()> {
                             &manifest.config,
                             &PathBuf::from(template_path)
                                 .canonicalize()
-                                .context(format!("Template {:?} not found", &template_path))?,
+                                .context(format!("Template `{}` not found", &template_path))?,
                             &target_path,
                         )?;
                     }
@@ -132,21 +132,27 @@ fn generate_template(
     template: &Path,
     target: &Path,
 ) -> eyre::Result<()> {
-    let data =
-        fs::read_to_string(template).context(format!("Failed to parse template {:?}", template))?;
+    let data = fs::read_to_string(template)
+        .context(format!("Failed to parse template `{}`", template.display()))?;
 
     let mut engine = upon::Engine::new();
     engine
         .add_template(template.to_str().unwrap(), &data)
-        .context("Failed to add template to template engine")?;
+        .context(format!(
+            "Failed to add template `{}` to template engine",
+            template.display()
+        ))?;
     let rendered = engine
         .template(template.to_str().unwrap())
         .render(config)
         .to_string()
-        .context(format!("Failed to render template {:?}", template))?;
+        .context(format!(
+            "Failed to render template `{}`",
+            template.display()
+        ))?;
 
     fs::write(target, rendered)?;
-    println!("INFO: Generated {:?} template", template);
+    println!("INFO: Generated `{}` template", template.display());
     Ok(())
 }
 
@@ -169,30 +175,43 @@ fn symlink_dir_all(target: &Path, dest: &Path, force_flag: &bool) -> eyre::Resul
 fn symlink_file(target: &Path, dest: &Path, force_flag: &bool) -> eyre::Result<()> {
     match symlink(target, dest) {
         Ok(()) => {
-            println!("INFO: Symlinked {:?} -> {:?}", target, dest);
+            println!(
+                "INFO: Symlinked `{}` -> `{}`",
+                target.display(),
+                dest.display()
+            );
         }
         Err(err) => match err.kind() {
             io::ErrorKind::AlreadyExists => {
                 if *force_flag {
                     std::fs::remove_file(dest)?;
-                    println!("WARNING: Destination {:?} already exists. Removing", dest);
+                    println!(
+                        "WARNING: Destination `{}` already exists. Removing",
+                        dest.display()
+                    );
                     symlink(target, dest)?;
-                    println!("INFO: Symlinked {:?} -> {:?}", target, dest);
+                    println!(
+                        "INFO: Symlinked `{}` -> `{}`",
+                        target.display(),
+                        dest.display()
+                    );
                     return Ok(());
                 }
                 if dest.is_symlink() {
                     println!(
-                        "WARNING: Destination {:?} already symlinked. Skipping",
-                        dest
+                        "WARNING: Destination `{}` already symlinked. Skipping",
+                        dest.display()
                     );
                 } else {
-                    println!("ERROR: Destination {:?} exists but it's not a symlink. Please resolve manually", dest);
+                    println!("ERROR: Destination `{}` exists but it's not a symlink. Please resolve manually", dest.display());
                 }
             }
             _ => {
                 println!(
-                    "ERROR: Failed to symlink {:?} -> {:?}. {}",
-                    target, dest, err
+                    "ERROR: Failed to symlink `{}` -> `{}`. {}",
+                    target.display(),
+                    dest.display(),
+                    err
                 );
             }
         },
