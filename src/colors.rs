@@ -11,8 +11,22 @@ pub fn generate_material_colors(wp_path: PathBuf, manifest: &mut Manifest) -> ey
     image.resize(128, 128, FilterType::Lanczos3);
     let theme = ThemeBuilder::with_source(ImageReader::extract_color(&image)).build();
 
-    for (k, v) in theme.schemes.dark.into_iter() {
-        manifest.config.insert(k, v.to_hex());
+    manifest
+        .config
+        .insert("source_color".to_string(), theme.source.to_hex());
+    let default_scheme = "dark".to_string();
+    let scheme = manifest.config.get("scheme").unwrap_or(&default_scheme);
+
+    if *scheme == "dark" {
+        for (k, v) in theme.schemes.dark.into_iter() {
+            manifest.config.insert(k, v.to_hex());
+        }
+    } else if *scheme == "light" {
+        for (k, v) in theme.schemes.light.into_iter() {
+            manifest.config.insert(k, v.to_hex());
+        }
+    } else {
+        panic!("Invalid scheme `{}`", scheme);
     }
     generate_base16_colors(&mut manifest.config, &theme.source.to_hex())?;
     Ok(())
