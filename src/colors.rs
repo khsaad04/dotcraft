@@ -1,4 +1,4 @@
-use crate::Manifest;
+use crate::Config;
 use color_eyre::eyre;
 use material_colors::{
     image::{FilterType, ImageReader},
@@ -6,29 +6,27 @@ use material_colors::{
 };
 use std::{collections::HashMap, path::PathBuf};
 
-pub fn generate_material_colors(wp_path: PathBuf, manifest: &mut Manifest) -> eyre::Result<()> {
+pub fn generate_material_colors(
+    wp_path: PathBuf,
+    dark: bool,
+    config: &mut Config,
+) -> eyre::Result<()> {
     let mut image = ImageReader::open(wp_path)?;
     image.resize(128, 128, FilterType::Lanczos3);
     let theme = ThemeBuilder::with_source(ImageReader::extract_color(&image)).build();
 
-    manifest
-        .config
-        .insert("source_color".to_string(), theme.source.to_hex());
-    let default_scheme = "dark".to_string();
-    let scheme = manifest.config.get("scheme").unwrap_or(&default_scheme);
+    config.insert("source_color".to_string(), theme.source.to_hex());
 
-    if *scheme == "dark" {
+    if dark {
         for (k, v) in theme.schemes.dark.into_iter() {
-            manifest.config.insert(k, v.to_hex());
-        }
-    } else if *scheme == "light" {
-        for (k, v) in theme.schemes.light.into_iter() {
-            manifest.config.insert(k, v.to_hex());
+            config.insert(k, v.to_hex());
         }
     } else {
-        panic!("Invalid scheme `{}`", scheme);
+        for (k, v) in theme.schemes.light.into_iter() {
+            config.insert(k, v.to_hex());
+        }
     }
-    generate_base16_colors(&mut manifest.config, &theme.source.to_hex())?;
+    generate_base16_colors(config, &theme.source.to_hex())?;
     Ok(())
 }
 

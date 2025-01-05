@@ -19,13 +19,15 @@ pub enum Commands {
         /// Force remove existing files
         #[arg(short, long)]
         force: bool,
+        name: Option<String>,
     },
     /// Symlink all files
     Link {
         /// Force remove existing files
         #[arg(short, long)]
         force: bool,
+        name: Option<String>,
     },
     /// Generate all templates
-    Generate,
+    Generate { name: Option<String> },
 }

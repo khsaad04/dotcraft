@@ -10,20 +10,22 @@ use std::{
     fs, io,
     os::unix::fs::symlink,
     path::{Path, PathBuf},
-    str::FromStr,
 };
+
+type Config = HashMap<String, String>;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Manifest {
-    config: HashMap<String, String>,
+    wallpaper: Option<PathBuf>,
+    dark: Option<bool>,
     files: HashMap<String, File>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 struct File {
     target: String,
-    dest: Option<String>,
-    template: Option<String>,
+    dest: Option<PathBuf>,
+    template: Option<PathBuf>,
 }
 
 fn main() -> eyre::Result<()> {
@@ -36,21 +38,23 @@ fn main() -> eyre::Result<()> {
         .canonicalize()
         .context(format!("`{}` not found", &cli.manifest.display()))?;
     std::env::set_current_dir(manifest_path.parent().unwrap())?;
-    let mut manifest: Manifest = toml::from_str(
+    let manifest: Manifest = toml::from_str(
         &fs::read_to_string(manifest_path).context("Failed to read file Manifest.toml")?,
     )
     .context("Failed to parse Manifest.toml")?;
 
     // Generate color scheme from wallpaper
-    if let Some(wallpaper) = manifest.config.get("wallpaper") {
-        let wp_path = PathBuf::from_str(wallpaper)?
+    let mut config: Config = HashMap::new();
+    if let Some(wallpaper) = manifest.wallpaper {
+        let wp_path = wallpaper
             .canonicalize()
-            .context(format!("Wallpaper `{}` not found", wallpaper))?;
-        manifest.config.insert(
+            .context(format!("Wallpaper `{}` not found", wallpaper.display()))?;
+        config.insert(
             "wallpaper".to_string(),
             wp_path.to_str().unwrap().to_string(),
         );
-        colors::generate_material_colors(wp_path, &mut manifest)?;
+        let scheme = manifest.dark.unwrap_or(true);
+        colors::generate_material_colors(wp_path, scheme, &mut config)?;
     } else if has_templates(&manifest) {
         panic!("`wallpaper` is not set. Needed for color scheme generation");
     } else {
@@ -58,61 +62,133 @@ fn main() -> eyre::Result<()> {
     }
 
     // Execute commands
-    for (_, file) in manifest.files.iter() {
-        let globbed_path = glob(&file.target).context(format!(
-            "Failed to parse target `{}`. Invalid glob pattern",
-            &file.target
-        ))?;
-        for entry in globbed_path {
-            let entry = entry?;
-            let target_path = PathBuf::from(&entry)
-                .canonicalize()
-                .context(format!("Target `{}` not found", &entry.display()))?;
-            let home_dir = PathBuf::from(std::env::var("HOME")?);
-            let dest_path = if let Some(dest) = &file.dest {
-                let dest = PathBuf::from(dest);
-                if dest.is_dir() {
-                    home_dir.join(dest).join(entry.iter().last().unwrap())
+    match &cli.command {
+        Some(cli::Commands::Sync {
+            force,
+            name: specified_name,
+        }) => {
+            if let Some(specified_name) = specified_name {
+                if let Some(file) = manifest.files.get(specified_name) {
+                    run_sync_command(file, &config, force)?;
                 } else {
-                    home_dir.join(dest)
+                    panic!("`{}` not found", specified_name);
                 }
             } else {
-                home_dir.join(&entry)
-            };
-            if !dest_path.parent().unwrap().exists() {
-                fs::create_dir_all(dest_path.parent().unwrap())?;
-            }
-            match &cli.command {
-                Some(cli::Commands::Sync { force }) => {
-                    if let Some(template_path) = &file.template {
-                        generate_template(
-                            &manifest.config,
-                            &PathBuf::from(template_path)
-                                .canonicalize()
-                                .context(format!("Template `{}` not found", &template_path))?,
-                            &target_path,
-                        )?;
-                    }
-                    symlink_dir_all(&target_path, &dest_path, force)?;
-                }
-                Some(cli::Commands::Link { force }) => {
-                    symlink_dir_all(&target_path, &dest_path, force)?;
-                }
-                Some(cli::Commands::Generate) => {
-                    if let Some(template_path) = &file.template {
-                        generate_template(
-                            &manifest.config,
-                            &PathBuf::from(template_path)
-                                .canonicalize()
-                                .context(format!("Template `{}` not found", &template_path))?,
-                            &target_path,
-                        )?;
-                    }
-                }
-                None => {
-                    unreachable!()
+                for (_, file) in manifest.files.iter() {
+                    run_sync_command(file, &config, force)?;
                 }
             }
+        }
+        Some(cli::Commands::Link {
+            force,
+            name: specified_name,
+        }) => {
+            if let Some(specified_name) = specified_name {
+                if let Some(file) = manifest.files.get(specified_name) {
+                    run_link_command(file, force)?;
+                } else {
+                    panic!("`{}` not found", specified_name);
+                }
+            } else {
+                for (_, file) in manifest.files.iter() {
+                    run_link_command(file, force)?;
+                }
+            }
+        }
+        Some(cli::Commands::Generate {
+            name: specified_name,
+        }) => {
+            if let Some(specified_name) = specified_name {
+                if let Some(file) = manifest.files.get(specified_name) {
+                    run_generate_command(file, &config)?;
+                } else {
+                    panic!("`{}` not found", specified_name);
+                }
+            } else {
+                for (_, file) in manifest.files.iter() {
+                    run_generate_command(file, &config)?;
+                }
+            }
+        }
+        None => {
+            unreachable!()
+        }
+    }
+    Ok(())
+}
+
+fn parse_paths(entry: &Path, file: &File) -> eyre::Result<(PathBuf, PathBuf)> {
+    let target_path = PathBuf::from(&entry)
+        .canonicalize()
+        .context(format!("Target `{}` not found", &entry.display()))?;
+    let home_dir = PathBuf::from(std::env::var("HOME")?);
+    let dest_path = if let Some(dest) = &file.dest {
+        let dest = PathBuf::from(dest);
+        if dest.is_dir() {
+            home_dir.join(dest).join(entry.iter().last().unwrap())
+        } else {
+            home_dir.join(dest)
+        }
+    } else {
+        home_dir.join(entry)
+    };
+    if !dest_path.parent().unwrap().exists() {
+        fs::create_dir_all(dest_path.parent().unwrap())?;
+    }
+    Ok((target_path, dest_path))
+}
+
+fn run_sync_command(file: &File, config: &Config, force: &bool) -> eyre::Result<()> {
+    let globbed_path = glob(&file.target).context(format!(
+        "Failed to parse target `{}`. Invalid glob pattern",
+        &file.target
+    ))?;
+    for entry in globbed_path {
+        let entry = entry?;
+        let (target_path, dest_path) = parse_paths(&entry, file)?;
+        if let Some(template_path) = &file.template {
+            generate_template(
+                config,
+                &PathBuf::from(template_path)
+                    .canonicalize()
+                    .context(format!("Template `{}` not found", &template_path.display()))?,
+                &target_path,
+            )?;
+        }
+        symlink_dir_all(&target_path, &dest_path, force)?;
+    }
+    Ok(())
+}
+
+fn run_link_command(file: &File, force: &bool) -> eyre::Result<()> {
+    let globbed_path = glob(&file.target).context(format!(
+        "Failed to parse target `{}`. Invalid glob pattern",
+        &file.target
+    ))?;
+    for entry in globbed_path {
+        let entry = entry?;
+        let (target_path, dest_path) = parse_paths(&entry, file)?;
+        symlink_dir_all(&target_path, &dest_path, force)?;
+    }
+    Ok(())
+}
+
+fn run_generate_command(file: &File, config: &Config) -> eyre::Result<()> {
+    let globbed_path = glob(&file.target).context(format!(
+        "Failed to parse target `{}`. Invalid glob pattern",
+        &file.target
+    ))?;
+    for entry in globbed_path {
+        let entry = entry?;
+        let (target_path, _) = parse_paths(&entry, file)?;
+        if let Some(template_path) = &file.template {
+            generate_template(
+                config,
+                &PathBuf::from(template_path)
+                    .canonicalize()
+                    .context(format!("Template `{}` not found", &template_path.display()))?,
+                &target_path,
+            )?;
         }
     }
     Ok(())
