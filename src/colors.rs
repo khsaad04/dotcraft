@@ -1,4 +1,4 @@
-use crate::Config;
+use crate::VarMap;
 use color_eyre::eyre;
 use material_colors::{
     image::{FilterType, ImageReader},
@@ -9,7 +9,7 @@ use std::{collections::HashMap, path::PathBuf};
 pub fn generate_material_colors(
     wp_path: PathBuf,
     dark: bool,
-    config: &mut Config,
+    config: &mut VarMap,
 ) -> eyre::Result<()> {
     let mut image = ImageReader::open(wp_path)?;
     image.resize(128, 128, FilterType::Lanczos3);
@@ -54,7 +54,7 @@ pub fn generate_base16_colors(
     ];
     for (name, value) in base16.into_iter() {
         let mut weight: f32 = 0.3;
-        if name[4..].parse::<usize>().unwrap() > 7 {
+        if name[4..].parse::<usize>()? > 7 {
             weight = 0.5;
         }
         let new_color = blend_color(value, source_color, weight)?;

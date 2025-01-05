@@ -12,14 +12,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-type Config = HashMap<String, String>;
-
 #[derive(Debug, Deserialize, Serialize)]
 struct Manifest {
     wallpaper: Option<PathBuf>,
     dark: Option<bool>,
     files: HashMap<String, File>,
 }
+
+type VarMap = HashMap<String, String>;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct File {
@@ -44,15 +44,12 @@ fn main() -> eyre::Result<()> {
     .context("Failed to parse Manifest.toml")?;
 
     // Generate color scheme from wallpaper
-    let mut config: Config = HashMap::new();
+    let mut config: VarMap = HashMap::new();
     if let Some(wallpaper) = manifest.wallpaper {
         let wp_path = wallpaper
             .canonicalize()
             .context(format!("Wallpaper `{}` not found", wallpaper.display()))?;
-        config.insert(
-            "wallpaper".to_string(),
-            wp_path.to_str().unwrap().to_string(),
-        );
+        config.insert("wallpaper".to_string(), wp_path.display().to_string());
         let scheme = manifest.dark.unwrap_or(true);
         colors::generate_material_colors(wp_path, scheme, &mut config)?;
     } else if has_templates(&manifest) {
@@ -138,7 +135,7 @@ fn parse_paths(entry: &Path, file: &File) -> eyre::Result<(PathBuf, PathBuf)> {
     Ok((target_path, dest_path))
 }
 
-fn run_sync_command(file: &File, config: &Config, force: &bool) -> eyre::Result<()> {
+fn run_sync_command(file: &File, config: &VarMap, force: &bool) -> eyre::Result<()> {
     let globbed_path = glob(&file.target).context(format!(
         "Failed to parse target `{}`. Invalid glob pattern",
         &file.target
@@ -173,7 +170,7 @@ fn run_link_command(file: &File, force: &bool) -> eyre::Result<()> {
     Ok(())
 }
 
-fn run_generate_command(file: &File, config: &Config) -> eyre::Result<()> {
+fn run_generate_command(file: &File, config: &VarMap) -> eyre::Result<()> {
     let globbed_path = glob(&file.target).context(format!(
         "Failed to parse target `{}`. Invalid glob pattern",
         &file.target
