@@ -121,11 +121,16 @@ fn parse_paths(entry: &Path, file: &File) -> eyre::Result<(PathBuf, PathBuf)> {
         .context(format!("Target `{}` not found", &entry.display()))?;
     let home_dir = PathBuf::from(std::env::var("HOME")?);
     let dest_path = if let Some(dest) = &file.dest {
-        let dest = PathBuf::from(dest);
+        let dest = PathBuf::from(
+            dest.display()
+                .to_string()
+                .replace('~', home_dir.to_str().unwrap()),
+        )
+        .canonicalize()?;
         if dest.is_dir() {
-            home_dir.join(dest).join(entry.iter().last().unwrap())
+            dest.join(entry.iter().last().unwrap())
         } else {
-            home_dir.join(dest)
+            dest
         }
     } else {
         home_dir.join(entry)
