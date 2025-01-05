@@ -29,5 +29,9 @@ pub enum Commands {
         name: Option<String>,
     },
     /// Generate all templates
-    Generate { name: Option<String> },
+    Generate {
+        #[arg(short, long)]
+        force: bool,
+        name: Option<String>,
+    },
 }
