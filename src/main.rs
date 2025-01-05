@@ -232,7 +232,7 @@ fn generate_template(
         ))?;
 
     fs::write(target, rendered)?;
-    println!("INFO: Generated `{}` template", template.display());
+    println!("INFO: Generated template `{}`", template.display());
     Ok(())
 }
 
@@ -281,19 +281,16 @@ fn symlink_file(target: &Path, dest: &Path, force_flag: &bool) -> eyre::Result<(
                     if dest.is_symlink() {
                         let original_path = dest.canonicalize()?;
                         if target == original_path {
-                            println!(
-                                "WARNING: Destination `{}` already symlinked. Skipping",
-                                dest.display()
-                            );
+                            println!("INFO: Skipped symlinking `{}`. Up to date.", dest.display());
                         } else {
                             println!(
-                                "ERROR: Destination `{}` is symlinked to `{}`. Resolve manually.",
+                                "WARNING: Destination `{}` is symlinked to `{}`. Resolve manually.",
                                 dest.display(),
                                 original_path.display()
                             );
                         }
                     } else {
-                        println!("ERROR: Destination `{}` exists but it's not a symlink. Resolve manually", dest.display());
+                        println!("WARNING: Destination `{}` exists but it's not a symlink. Resolve manually", dest.display());
                     }
                 }
                 _ => {
