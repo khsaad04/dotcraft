@@ -118,70 +118,63 @@ fn main() -> eyre::Result<()> {
     Ok(())
 }
 
-fn resolve_home_dir(path: &str) -> eyre::Result<PathBuf> {
+fn resolve_home_dir(path: &str) -> eyre::Result<String> {
+    let mut result = String::new();
     let home_dir = std::env::var("HOME")?;
-    Ok(PathBuf::from(
-        path.replace('~', &home_dir).replace("$HOME", &home_dir),
-    ))
-}
-
-fn parse_paths(entry: &Path, file: &File) -> eyre::Result<(PathBuf, PathBuf)> {
-    let target_path = PathBuf::from(&entry)
-        .canonicalize()
-        .context(format!("Target `{}` not found", &entry.display()))?;
-    let dest_path = resolve_home_dir(&file.dest)?.join(entry.iter().last().unwrap());
-    if !dest_path.parent().unwrap().exists() {
-        fs::create_dir_all(dest_path.parent().unwrap())?;
-    }
-    Ok((target_path, dest_path))
+    result.push_str(&path.replace('~', &home_dir).replace("$HOME", &home_dir));
+    Ok(result)
 }
 
 fn run_sync_command(file: &File, config: &VarMap, force: &bool) -> eyre::Result<()> {
-    let globbed_path = glob(resolve_home_dir(&file.target)?.to_str().unwrap()).context(format!(
+    let globbed_path = glob(&resolve_home_dir(&file.target)?).context(format!(
         "Failed to parse target `{}`. Invalid glob pattern",
         &file.target
     ))?;
     for entry in globbed_path {
         let entry = entry?;
-        let (target_path, dest_path) = parse_paths(&entry, file)?;
+        let dest_path = PathBuf::from(resolve_home_dir(&file.dest)?);
+        let dest_path = if dest_path.is_dir() {
+            dest_path.join(entry.iter().last().unwrap())
+        } else {
+            dest_path
+        };
         if let Some(template_path) = &file.template {
             let template_path = PathBuf::from(template_path);
             if template_path.exists() {
-                generate_template(config, &template_path, &target_path, force)?;
+                generate_template(&template_path, &entry, force, config)?;
             } else {
                 eprintln!("ERROR: Template `{}` not found", &template_path.display())
             }
         }
-        symlink_dir_all(&target_path, &dest_path, force)?;
+        symlink_dir_all(&entry, &dest_path, force)?;
     }
     Ok(())
 }
 
 fn run_link_command(file: &File, force: &bool) -> eyre::Result<()> {
-    let globbed_path = glob(resolve_home_dir(&file.target)?.to_str().unwrap()).context(format!(
+    let globbed_path = glob(&resolve_home_dir(&file.target)?).context(format!(
         "Failed to parse target `{}`. Invalid glob pattern",
         &file.target
     ))?;
     for entry in globbed_path {
         let entry = entry?;
-        let (target_path, dest_path) = parse_paths(&entry, file)?;
-        symlink_dir_all(&target_path, &dest_path, force)?;
+        let dest_path = PathBuf::from(resolve_home_dir(&file.dest)?);
+        symlink_dir_all(&entry, &dest_path, force)?;
     }
     Ok(())
 }
 
 fn run_generate_command(file: &File, config: &VarMap, force: &bool) -> eyre::Result<()> {
-    let globbed_path = glob(resolve_home_dir(&file.target)?.to_str().unwrap()).context(format!(
+    let globbed_path = glob(&resolve_home_dir(&file.target)?).context(format!(
         "Failed to parse target `{}`. Invalid glob pattern",
         &file.target
     ))?;
     for entry in globbed_path {
         let entry = entry?;
-        let (target_path, _) = parse_paths(&entry, file)?;
         if let Some(template_path) = &file.template {
             let template_path = PathBuf::from(template_path);
             if template_path.exists() {
-                generate_template(config, &template_path, &target_path, force)?;
+                generate_template(&template_path, &entry, force, config)?;
             } else {
                 eprintln!("ERROR: Template `{}` not found", &template_path.display())
             }
@@ -200,10 +193,10 @@ fn has_templates(manifest: &Manifest) -> bool {
 }
 
 fn generate_template(
-    config: &HashMap<String, String>,
     template: &Path,
     target: &Path,
     force: &bool,
+    config: &HashMap<String, String>,
 ) -> eyre::Result<()> {
     let template_metadata = template.metadata()?;
     let target_metadata = target.metadata()?;
@@ -238,7 +231,7 @@ fn generate_template(
     Ok(())
 }
 
-fn symlink_dir_all(target: &Path, dest: &Path, force_flag: &bool) -> eyre::Result<()> {
+fn symlink_dir_all(target: &Path, dest: &Path, force: &bool) -> eyre::Result<()> {
     if target.is_dir() {
         for entry in fs::read_dir(target)? {
             let entry = entry?;
@@ -246,15 +239,15 @@ fn symlink_dir_all(target: &Path, dest: &Path, force_flag: &bool) -> eyre::Resul
             if !dest.parent().unwrap().exists() {
                 fs::create_dir_all(dest.parent().unwrap())?;
             }
-            symlink_dir_all(&entry.path(), dest, force_flag)?;
+            symlink_dir_all(&entry.path(), dest, force)?;
         }
     } else {
-        symlink_file(target, dest, force_flag)?;
+        symlink_file(target, dest, force)?;
     }
     Ok(())
 }
 
-fn symlink_file(target: &Path, dest: &Path, force_flag: &bool) -> eyre::Result<()> {
+fn symlink_file(target: &Path, dest: &Path, force: &bool) -> eyre::Result<()> {
     match symlink(target, dest) {
         Ok(()) => {
             println!(
@@ -266,12 +259,12 @@ fn symlink_file(target: &Path, dest: &Path, force_flag: &bool) -> eyre::Result<(
         Err(err) => {
             match err.kind() {
                 io::ErrorKind::AlreadyExists => {
-                    if *force_flag {
-                        std::fs::remove_file(dest)?;
+                    if *force {
                         println!(
                             "WARNING: Destination `{}` already exists. Removing",
                             dest.display()
                         );
+                        std::fs::remove_file(dest)?;
                         symlink(target, dest)?;
                         println!(
                             "INFO: Symlinked `{}` -> `{}`",
@@ -281,14 +274,14 @@ fn symlink_file(target: &Path, dest: &Path, force_flag: &bool) -> eyre::Result<(
                         return Ok(());
                     }
                     if dest.is_symlink() {
-                        let original_path = dest.canonicalize()?;
-                        if target == original_path {
+                        let symlink_origin = dest.canonicalize()?;
+                        if target.canonicalize()? == symlink_origin {
                             println!("INFO: Skipped symlinking `{}`. Up to date.", dest.display());
                         } else {
                             println!(
                                 "WARNING: Destination `{}` is symlinked to `{}`. Resolve manually.",
                                 dest.display(),
-                                original_path.display()
+                                symlink_origin.display()
                             );
                         }
                     } else {
