@@ -1,8 +1,11 @@
-[config] # Required, even without any config vars
-wallpaper = "wp.jpg" # Required only if templates are in use
+wallpaper = "wp.jpg" # Required for templates
+dark = true # Optional. Whether to use dark theme
 
 [files]
-test = {target = "test", dest = "dest", template = "temp"}
+test = {target = "test", dest = "~/dest/", template = "temp"}
+test2 = {target = "test2", dest = "~/dest/name"}
 
-# `temp` is generated to `target`
-# `./test` is symlinked to `./dest/test`
+# `temp` is generated into `test`
+# `test` is symlinked to `~/dest/test`
+
+# `test2` is symlinked to `~/dest/name`
