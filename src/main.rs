@@ -159,6 +159,11 @@ fn run_link_command(file: &File, force: &bool) -> eyre::Result<()> {
     for entry in globbed_path {
         let entry = entry?;
         let dest_path = PathBuf::from(resolve_home_dir(&file.dest)?);
+        let dest_path = if dest_path.is_dir() {
+            dest_path.join(entry.iter().last().unwrap())
+        } else {
+            dest_path
+        };
         symlink_dir_all(&entry, &dest_path, force)?;
     }
     Ok(())
