@@ -95,19 +95,18 @@ fn main() -> eyre::Result<()> {
             }
         }
         Some(cli::Commands::Generate {
-            force,
             name: specified_name,
         }) => {
             if let Some(specified_name) = specified_name {
                 if let Some(file) = manifest.files.get(specified_name) {
-                    run_generate_command(file, &config, force)?;
+                    run_generate_command(file, &config)?;
                 } else {
                     eprintln!("ERROR: `{}` not found", specified_name);
                     return Ok(());
                 }
             } else {
                 for (_, file) in manifest.files.iter() {
-                    run_generate_command(file, &config, force)?;
+                    run_generate_command(file, &config)?;
                 }
             }
         }
@@ -141,7 +140,7 @@ fn run_sync_command(file: &File, config: &VarMap, force: &bool) -> eyre::Result<
         if let Some(template_path) = &file.template {
             let template_path = PathBuf::from(template_path);
             if template_path.exists() {
-                generate_template(&template_path, &entry, force, config)?;
+                generate_template(&template_path, &entry, config)?;
             } else {
                 eprintln!("ERROR: Template `{}` not found", &template_path.display())
             }
@@ -169,7 +168,7 @@ fn run_link_command(file: &File, force: &bool) -> eyre::Result<()> {
     Ok(())
 }
 
-fn run_generate_command(file: &File, config: &VarMap, force: &bool) -> eyre::Result<()> {
+fn run_generate_command(file: &File, config: &VarMap) -> eyre::Result<()> {
     let globbed_path = glob(&resolve_home_dir(&file.target)?).context(format!(
         "Failed to parse target `{}`. Invalid glob pattern",
         &file.target
@@ -179,7 +178,7 @@ fn run_generate_command(file: &File, config: &VarMap, force: &bool) -> eyre::Res
         if let Some(template_path) = &file.template {
             let template_path = PathBuf::from(template_path);
             if template_path.exists() {
-                generate_template(&template_path, &entry, force, config)?;
+                generate_template(&template_path, &entry, config)?;
             } else {
                 eprintln!("ERROR: Template `{}` not found", &template_path.display())
             }
@@ -200,18 +199,8 @@ fn has_templates(manifest: &Manifest) -> bool {
 fn generate_template(
     template: &Path,
     target: &Path,
-    force: &bool,
     config: &HashMap<String, String>,
 ) -> eyre::Result<()> {
-    let template_metadata = template.metadata()?;
-    let target_metadata = target.metadata()?;
-    if (target_metadata.modified()? > template_metadata.modified()?) && !*force {
-        println!(
-            "INFO: Skipped template `{}`. Up to date",
-            template.display()
-        );
-        return Ok(());
-    }
     let data = fs::read_to_string(template)
         .context(format!("Failed to parse template `{}`", template.display()))?;
 
