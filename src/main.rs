@@ -2,7 +2,6 @@ mod cli;
 mod colors;
 
 use clap::Parser;
-use color_eyre::eyre::{self, Context};
 use glob::glob;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -10,6 +9,7 @@ use std::{
     fs, io,
     os::unix::fs::symlink,
     path::{Path, PathBuf},
+    process::ExitCode,
 };
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -28,27 +28,45 @@ struct File {
 
 type VarMap = HashMap<String, String>;
 
-fn main() -> eyre::Result<()> {
-    color_eyre::install()?;
+type Result<T> = std::result::Result<T, ()>;
+
+fn entrypoint() -> Result<()> {
     let cli = cli::Cli::parse();
 
     // Parse Manifest file
-    let manifest_path = cli
-        .manifest
-        .canonicalize()
-        .context(format!("`{}` not found", &cli.manifest.display()))?;
-    std::env::set_current_dir(manifest_path.parent().unwrap())?;
-    let manifest: Manifest = toml::from_str(
-        &fs::read_to_string(manifest_path).context("Failed to read file Manifest.toml")?,
-    )
-    .context("Failed to parse Manifest.toml")?;
+    let manifest_path = cli.manifest.canonicalize().map_err(|err| {
+        eprintln!(
+            "ERROR: could not find {manifest_path}: {err}",
+            manifest_path = &cli.manifest.display()
+        );
+    })?;
+    let manifest_parent_dir = manifest_path.parent().unwrap();
+    std::env::set_current_dir(manifest_parent_dir).map_err(|err| {
+        eprintln!(
+            "ERROR: could not change directory to {}: {err}",
+            manifest_parent_dir.display()
+        );
+    })?;
+    let manifest: Manifest =
+        toml::from_str(&fs::read_to_string(&manifest_path).map_err(|err| {
+            eprintln!(
+                "ERROR: could not read file {}: {err}",
+                manifest_path.display()
+            );
+        })?)
+        .map_err(|err| {
+            eprintln!(
+                "ERROR: could not parse toml {}: {err}",
+                manifest_path.display()
+            );
+        })?;
 
     // Generate color scheme from wallpaper
     let mut config: VarMap = HashMap::new();
     if let Some(wallpaper) = manifest.wallpaper {
-        let wp_path = PathBuf::from(&wallpaper)
-            .canonicalize()
-            .context(format!("Wallpaper `{}` not found", &wallpaper))?;
+        let wp_path = PathBuf::from(&wallpaper).canonicalize().map_err(|err| {
+            eprintln!("ERROR: could not find {wallpaper}: {err}",);
+        })?;
         config.insert("wallpaper".to_string(), wp_path.display().to_string());
         let scheme = manifest.dark.unwrap_or(true);
         colors::generate_material_colors(wp_path, scheme, &mut config)?;
@@ -117,21 +135,23 @@ fn main() -> eyre::Result<()> {
     Ok(())
 }
 
-fn resolve_home_dir(path: &str) -> eyre::Result<String> {
+fn resolve_home_dir(path: &str) -> String {
     let mut result = String::new();
-    let home_dir = std::env::var("HOME")?;
+    let home_dir = std::env::var("HOME").unwrap();
     result.push_str(&path.replace('~', &home_dir).replace("$HOME", &home_dir));
-    Ok(result)
+    result
 }
 
-fn run_sync_command(file: &File, config: &VarMap, force: &bool) -> eyre::Result<()> {
-    let globbed_path = glob(&resolve_home_dir(&file.target)?).context(format!(
-        "Failed to parse target `{}`. Invalid glob pattern",
-        &file.target
-    ))?;
+fn run_sync_command(file: &File, config: &VarMap, force: &bool) -> Result<()> {
+    let globbed_path = glob(&resolve_home_dir(&file.target)).map_err(|err| {
+        eprintln!(
+            "ERROR: could not parse target {target_path}: {err}",
+            target_path = &file.target
+        )
+    })?;
     for entry in globbed_path {
-        let entry = entry?;
-        let dest_path = PathBuf::from(resolve_home_dir(&file.dest)?);
+        let entry = entry.unwrap();
+        let dest_path = PathBuf::from(resolve_home_dir(&file.dest));
         let dest_path = if dest_path.is_dir() {
             dest_path.join(entry.iter().last().unwrap())
         } else {
@@ -150,14 +170,16 @@ fn run_sync_command(file: &File, config: &VarMap, force: &bool) -> eyre::Result<
     Ok(())
 }
 
-fn run_link_command(file: &File, force: &bool) -> eyre::Result<()> {
-    let globbed_path = glob(&resolve_home_dir(&file.target)?).context(format!(
-        "Failed to parse target `{}`. Invalid glob pattern",
-        &file.target
-    ))?;
+fn run_link_command(file: &File, force: &bool) -> Result<()> {
+    let globbed_path = glob(&resolve_home_dir(&file.target)).map_err(|err| {
+        eprintln!(
+            "ERROR: could not parse target {target_path}: {err}",
+            target_path = &file.target
+        )
+    })?;
     for entry in globbed_path {
-        let entry = entry?;
-        let dest_path = PathBuf::from(resolve_home_dir(&file.dest)?);
+        let entry = entry.unwrap();
+        let dest_path = PathBuf::from(resolve_home_dir(&file.dest));
         let dest_path = if dest_path.is_dir() {
             dest_path.join(entry.iter().last().unwrap())
         } else {
@@ -168,13 +190,15 @@ fn run_link_command(file: &File, force: &bool) -> eyre::Result<()> {
     Ok(())
 }
 
-fn run_generate_command(file: &File, config: &VarMap) -> eyre::Result<()> {
-    let globbed_path = glob(&resolve_home_dir(&file.target)?).context(format!(
-        "Failed to parse target `{}`. Invalid glob pattern",
-        &file.target
-    ))?;
+fn run_generate_command(file: &File, config: &VarMap) -> Result<()> {
+    let globbed_path = glob(&resolve_home_dir(&file.target)).map_err(|err| {
+        eprintln!(
+            "ERROR: could not parse target {target_path}: {err}",
+            target_path = &file.target
+        )
+    })?;
     for entry in globbed_path {
-        let entry = entry?;
+        let entry = entry.unwrap();
         if let Some(template_path) = &file.template {
             let template_path = PathBuf::from(template_path);
             if template_path.exists() {
@@ -200,38 +224,54 @@ fn generate_template(
     template: &Path,
     target: &Path,
     config: &HashMap<String, String>,
-) -> eyre::Result<()> {
-    let data = fs::read_to_string(template)
-        .context(format!("Failed to parse template `{}`", template.display()))?;
+) -> Result<()> {
+    let data = fs::read_to_string(template).map_err(|err| {
+        eprintln!("ERROR: could not read file {}: {err}", template.display());
+    })?;
 
     let mut engine = upon::Engine::new();
     engine
         .add_template(template.to_str().unwrap(), &data)
-        .context(format!(
-            "Failed to add template `{}` to template engine",
-            template.display()
-        ))?;
+        .map_err(|err| {
+            eprintln!(
+                "ERROR: could not add template {}: {err}",
+                template.display()
+            );
+        })?;
     let rendered = engine
         .template(template.to_str().unwrap())
         .render(config)
         .to_string()
-        .context(format!(
-            "Failed to render template `{}`",
-            template.display()
-        ))?;
+        .map_err(|err| {
+            eprintln!(
+                "ERROR: could not render template {}: {err}",
+                template.display()
+            );
+        })?;
 
-    fs::write(target, rendered)?;
+    fs::write(target, rendered).map_err(|err| {
+        eprintln!(
+            "ERROR: could not write to file {target_path}: {err}",
+            target_path = target.display()
+        );
+    })?;
     println!("INFO: Generated template `{}`", template.display());
     Ok(())
 }
 
-fn symlink_dir_all(target: &Path, dest: &Path, force: &bool) -> eyre::Result<()> {
+fn symlink_dir_all(target: &Path, dest: &Path, force: &bool) -> Result<()> {
     if target.is_dir() {
-        for entry in fs::read_dir(target)? {
-            let entry = entry?;
+        for entry in fs::read_dir(target).unwrap() {
+            let entry = entry.unwrap();
             let dest = &dest.join(entry.path().file_name().unwrap());
-            if !dest.parent().unwrap().exists() {
-                fs::create_dir_all(dest.parent().unwrap())?;
+            let dest_parent_dir = dest.parent().unwrap();
+            if !dest_parent_dir.exists() {
+                fs::create_dir_all(dest_parent_dir).map_err(|err| {
+                    eprintln!(
+                        "ERROR: could not create dir {}: {err}",
+                        dest_parent_dir.display()
+                    );
+                })?;
             }
             symlink_dir_all(&entry.path(), dest, force)?;
         }
@@ -241,7 +281,7 @@ fn symlink_dir_all(target: &Path, dest: &Path, force: &bool) -> eyre::Result<()>
     Ok(())
 }
 
-fn symlink_file(target: &Path, dest: &Path, force: &bool) -> eyre::Result<()> {
+fn symlink_file(target: &Path, dest: &Path, force: &bool) -> Result<()> {
     match symlink(target, dest) {
         Ok(()) => {
             println!(
@@ -258,8 +298,10 @@ fn symlink_file(target: &Path, dest: &Path, force: &bool) -> eyre::Result<()> {
                             "WARNING: Destination `{}` already exists. Removing",
                             dest.display()
                         );
-                        std::fs::remove_file(dest)?;
-                        symlink(target, dest)?;
+                        std::fs::remove_file(dest).map_err(|err| {
+                            eprintln!("ERROR: could not remove file {}: {err}", dest.display());
+                        })?;
+                        symlink_file(target, dest, force)?;
                         println!(
                             "INFO: Symlinked `{}` -> `{}`",
                             target.display(),
@@ -268,8 +310,8 @@ fn symlink_file(target: &Path, dest: &Path, force: &bool) -> eyre::Result<()> {
                         return Ok(());
                     }
                     if dest.is_symlink() {
-                        let symlink_origin = dest.canonicalize()?;
-                        if target.canonicalize()? == symlink_origin {
+                        let symlink_origin = dest.canonicalize().unwrap();
+                        if target.canonicalize().unwrap() == symlink_origin {
                             println!("INFO: Skipped symlinking `{}`. Up to date.", dest.display());
                         } else {
                             println!(
@@ -294,4 +336,11 @@ fn symlink_file(target: &Path, dest: &Path, force: &bool) -> eyre::Result<()> {
         }
     }
     Ok(())
+}
+
+fn main() -> ExitCode {
+    match entrypoint() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(()) => ExitCode::FAILURE,
+    }
 }

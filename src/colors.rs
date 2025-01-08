@@ -1,17 +1,17 @@
-use crate::VarMap;
-use color_eyre::eyre;
+use crate::{Result, VarMap};
 use material_colors::{
     image::{FilterType, ImageReader},
     theme::ThemeBuilder,
 };
 use std::{collections::HashMap, path::PathBuf};
 
-pub fn generate_material_colors(
-    wp_path: PathBuf,
-    dark: bool,
-    config: &mut VarMap,
-) -> eyre::Result<()> {
-    let mut image = ImageReader::open(wp_path)?;
+pub fn generate_material_colors(wp_path: PathBuf, dark: bool, config: &mut VarMap) -> Result<()> {
+    let mut image = ImageReader::open(&wp_path).map_err(|err| {
+        eprintln!(
+            "ERROR: could not read image {wp_path}: {err}",
+            wp_path = wp_path.display()
+        );
+    })?;
     image.resize(128, 128, FilterType::Lanczos3);
     let theme = ThemeBuilder::with_source(ImageReader::extract_color(&image)).build();
 
@@ -33,7 +33,7 @@ pub fn generate_material_colors(
 pub fn generate_base16_colors(
     config: &mut HashMap<String, String>,
     source_color: &str,
-) -> eyre::Result<()> {
+) -> Result<()> {
     let base16: [(&str, &str); 16] = [
         ("base0", "000000"),
         ("base1", "ff0000"),
@@ -52,9 +52,9 @@ pub fn generate_base16_colors(
         ("base14", "00ffff"),
         ("base15", "ffffff"),
     ];
-    for (name, value) in base16.into_iter() {
+    for (i, (name, value)) in base16.into_iter().enumerate() {
         let mut weight: f32 = 0.3;
-        if name[4..].parse::<usize>()? > 7 {
+        if i > 7 {
             weight = 0.5;
         }
         let new_color = blend_color(value, source_color, weight)?;
@@ -63,16 +63,16 @@ pub fn generate_base16_colors(
     Ok(())
 }
 
-fn blend_color(first: &str, second: &str, weight: f32) -> eyre::Result<String> {
+fn blend_color(first: &str, second: &str, weight: f32) -> Result<String> {
     let w = weight * 2.0 - 1.0;
     let w1 = (w / 2.0) + 0.5;
     let w2 = 1.0 - w1;
-    let first_r = u32::from_str_radix(&first[..2], 16)?;
-    let first_g = u32::from_str_radix(&first[2..4], 16)?;
-    let first_b = u32::from_str_radix(&first[4..6], 16)?;
-    let second_r = u32::from_str_radix(&second[..2], 16)?;
-    let second_g = u32::from_str_radix(&second[2..4], 16)?;
-    let second_b = u32::from_str_radix(&second[4..6], 16)?;
+    let first_r = u32::from_str_radix(&first[..2], 16).unwrap();
+    let first_g = u32::from_str_radix(&first[2..4], 16).unwrap();
+    let first_b = u32::from_str_radix(&first[4..6], 16).unwrap();
+    let second_r = u32::from_str_radix(&second[..2], 16).unwrap();
+    let second_g = u32::from_str_radix(&second[2..4], 16).unwrap();
+    let second_b = u32::from_str_radix(&second[4..6], 16).unwrap();
     let r = (first_r as f32 * w1 + second_r as f32 * w2).clamp(16.0, 255.0) as u8;
     let g = (first_g as f32 * w1 + second_g as f32 * w2).clamp(16.0, 255.0) as u8;
     let b = (first_b as f32 * w1 + second_b as f32 * w2).clamp(16.0, 255.0) as u8;

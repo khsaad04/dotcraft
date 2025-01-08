@@ -14,21 +14,21 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Generate and symlink all files
+    /// Generate templates and symlink files
     Sync {
         /// Force remove existing files
         #[arg(short, long)]
         force: bool,
         name: Option<String>,
     },
-    /// Symlink all files
+    /// Symlink files
     Link {
         /// Force remove existing files
         #[arg(short, long)]
         force: bool,
         name: Option<String>,
     },
-    /// Generate all templates
+    /// Generate templates
     Generate {
         #[arg(short, long)]
         name: Option<String>,
