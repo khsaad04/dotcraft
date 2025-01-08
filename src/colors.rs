@@ -3,13 +3,13 @@ use material_colors::{
     image::{FilterType, ImageReader},
     theme::ThemeBuilder,
 };
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::Path};
 
-pub fn generate_material_colors(wp_path: PathBuf, dark: bool, config: &mut VarMap) -> Result<()> {
-    let mut image = ImageReader::open(&wp_path).map_err(|err| {
+pub fn generate_material_colors(wp_path: &Path, dark: &bool, config: &mut VarMap) -> Result<()> {
+    let mut image = ImageReader::open(wp_path).map_err(|err| {
         eprintln!(
-            "ERROR: could not read image {wp_path}: {err}",
-            wp_path = wp_path.display()
+            "ERROR: could not read image {path}: {err}",
+            path = &wp_path.display()
         );
     })?;
     image.resize(128, 128, FilterType::Lanczos3);
@@ -17,7 +17,7 @@ pub fn generate_material_colors(wp_path: PathBuf, dark: bool, config: &mut VarMa
 
     config.insert("source_color".to_string(), theme.source.to_hex());
 
-    if dark {
+    if *dark {
         for (k, v) in theme.schemes.dark.into_iter() {
             config.insert(k, v.to_hex());
         }
@@ -26,14 +26,11 @@ pub fn generate_material_colors(wp_path: PathBuf, dark: bool, config: &mut VarMa
             config.insert(k, v.to_hex());
         }
     }
-    generate_base16_colors(config, &theme.source.to_hex())?;
+    generate_base16_colors(config, &theme.source.to_hex());
     Ok(())
 }
 
-pub fn generate_base16_colors(
-    config: &mut HashMap<String, String>,
-    source_color: &str,
-) -> Result<()> {
+pub fn generate_base16_colors(config: &mut HashMap<String, String>, source_color: &str) {
     let base16: [(&str, &str); 16] = [
         ("base0", "000000"),
         ("base1", "ff0000"),
@@ -57,13 +54,12 @@ pub fn generate_base16_colors(
         if i > 7 {
             weight = 0.5;
         }
-        let new_color = blend_color(value, source_color, weight)?;
+        let new_color = blend_color(value, source_color, weight);
         config.insert(name.to_string(), new_color);
     }
-    Ok(())
 }
 
-fn blend_color(first: &str, second: &str, weight: f32) -> Result<String> {
+fn blend_color(first: &str, second: &str, weight: f32) -> String {
     let w = weight * 2.0 - 1.0;
     let w1 = (w / 2.0) + 0.5;
     let w2 = 1.0 - w1;
@@ -76,5 +72,5 @@ fn blend_color(first: &str, second: &str, weight: f32) -> Result<String> {
     let r = (first_r as f32 * w1 + second_r as f32 * w2).clamp(16.0, 255.0) as u8;
     let g = (first_g as f32 * w1 + second_g as f32 * w2).clamp(16.0, 255.0) as u8;
     let b = (first_b as f32 * w1 + second_b as f32 * w2).clamp(16.0, 255.0) as u8;
-    Ok(format!("{:x}{:x}{:x}", r, g, b).to_string())
+    format!("{:x}{:x}{:x}", r, g, b).to_string()
 }

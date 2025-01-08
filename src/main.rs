@@ -2,14 +2,16 @@ mod cli;
 mod colors;
 
 use clap::Parser;
+use cli::Cli;
 use glob::glob;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
+    fmt::Debug,
     fs, io,
     os::unix::fs::symlink,
     path::{Path, PathBuf},
-    process::ExitCode,
+    process::exit,
 };
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -30,68 +32,82 @@ type VarMap = HashMap<String, String>;
 
 type Result<T> = std::result::Result<T, ()>;
 
-fn entrypoint() -> Result<()> {
+fn main() {
     let cli = cli::Cli::parse();
+    let mut config: VarMap = HashMap::new();
+    if let Ok(manifest) = parse_manifest_file(&cli.manifest) {
+        match (
+            parse_wallpaper(&manifest.wallpaper.clone(), &mut config, &manifest),
+            execute_subcommands(&cli, &manifest, &config),
+        ) {
+            (Ok(()), Ok(())) => exit(0),
+            _ => exit(1),
+        };
+    }
+}
 
-    // Parse Manifest file
-    let manifest_path = cli.manifest.canonicalize().map_err(|err| {
+fn parse_manifest_file(path: &Path) -> Result<Manifest> {
+    let manifest_path = path.canonicalize().map_err(|err| {
         eprintln!(
-            "ERROR: could not find {manifest_path}: {err}",
-            manifest_path = &cli.manifest.display()
+            "ERROR: could not find {path}: {err}",
+            path = &path.display()
         );
     })?;
     let manifest_parent_dir = manifest_path.parent().unwrap();
     std::env::set_current_dir(manifest_parent_dir).map_err(|err| {
         eprintln!(
-            "ERROR: could not change directory to {}: {err}",
-            manifest_parent_dir.display()
+            "ERROR: could not change directory to {path}: {err}",
+            path = &manifest_parent_dir.display()
         );
     })?;
     let manifest: Manifest =
         toml::from_str(&fs::read_to_string(&manifest_path).map_err(|err| {
             eprintln!(
-                "ERROR: could not read file {}: {err}",
-                manifest_path.display()
+                "ERROR: could not read file {path}: {err}",
+                path = &manifest_path.display()
             );
         })?)
         .map_err(|err| {
             eprintln!(
-                "ERROR: could not parse toml {}: {err}",
-                manifest_path.display()
+                "ERROR: could not parse toml {path}: {err}",
+                path = &manifest_path.display()
             );
         })?;
+    Ok(manifest)
+}
 
-    // Generate color scheme from wallpaper
-    let mut config: VarMap = HashMap::new();
-    if let Some(wallpaper) = manifest.wallpaper {
+fn parse_wallpaper(path: &Option<String>, config: &mut VarMap, manifest: &Manifest) -> Result<()> {
+    if let Some(wallpaper) = path {
         let wp_path = PathBuf::from(&wallpaper).canonicalize().map_err(|err| {
             eprintln!("ERROR: could not find {wallpaper}: {err}",);
         })?;
         config.insert("wallpaper".to_string(), wp_path.display().to_string());
         let scheme = manifest.dark.unwrap_or(true);
-        colors::generate_material_colors(wp_path, scheme, &mut config)?;
-    } else if has_templates(&manifest) {
+        colors::generate_material_colors(&wp_path, &scheme, config)?;
+    } else if has_templates(manifest) {
         eprintln!("ERROR: `wallpaper` is not set. Needed for color scheme generation");
     } else {
         println!("WARNING: Skipping color scheme generation.");
     }
+    Ok(())
+}
 
-    // Execute commands
+fn execute_subcommands(cli: &Cli, manifest: &Manifest, config: &VarMap) -> Result<()> {
     match &cli.command {
         Some(cli::Commands::Sync {
             force,
             name: specified_name,
         }) => {
             if let Some(specified_name) = specified_name {
-                if let Some(file) = manifest.files.get(specified_name) {
-                    run_sync_command(file, &config, force)?;
+                if let Some(file) = manifest.files.get(specified_name.as_str()) {
+                    run_sync_command(file, config, force)?;
                 } else {
-                    eprintln!("ERROR: `{}` not found", specified_name);
+                    eprintln!("ERROR: could not find {specified_name}",);
                     return Ok(());
                 }
             } else {
                 for (_, file) in manifest.files.iter() {
-                    run_sync_command(file, &config, force)?;
+                    run_sync_command(file, config, force)?;
                 }
             }
         }
@@ -100,10 +116,10 @@ fn entrypoint() -> Result<()> {
             name: specified_name,
         }) => {
             if let Some(specified_name) = specified_name {
-                if let Some(file) = manifest.files.get(specified_name) {
+                if let Some(file) = manifest.files.get(specified_name.as_str()) {
                     run_link_command(file, force)?;
                 } else {
-                    eprintln!("ERROR: `{}` not found", specified_name);
+                    eprintln!("ERROR: could not find {specified_name}",);
                     return Ok(());
                 }
             } else {
@@ -116,15 +132,15 @@ fn entrypoint() -> Result<()> {
             name: specified_name,
         }) => {
             if let Some(specified_name) = specified_name {
-                if let Some(file) = manifest.files.get(specified_name) {
-                    run_generate_command(file, &config)?;
+                if let Some(file) = manifest.files.get(specified_name.as_str()) {
+                    run_generate_command(file, config)?;
                 } else {
-                    eprintln!("ERROR: `{}` not found", specified_name);
+                    eprintln!("ERROR: could not find {specified_name}",);
                     return Ok(());
                 }
             } else {
                 for (_, file) in manifest.files.iter() {
-                    run_generate_command(file, &config)?;
+                    run_generate_command(file, config)?;
                 }
             }
         }
@@ -145,8 +161,8 @@ fn resolve_home_dir(path: &str) -> String {
 fn run_sync_command(file: &File, config: &VarMap, force: &bool) -> Result<()> {
     let globbed_path = glob(&resolve_home_dir(&file.target)).map_err(|err| {
         eprintln!(
-            "ERROR: could not parse target {target_path}: {err}",
-            target_path = &file.target
+            "ERROR: could not parse target {path}: {err}",
+            path = &file.target
         )
     })?;
     for entry in globbed_path {
@@ -162,7 +178,10 @@ fn run_sync_command(file: &File, config: &VarMap, force: &bool) -> Result<()> {
             if template_path.exists() {
                 generate_template(&template_path, &entry, config)?;
             } else {
-                eprintln!("ERROR: Template `{}` not found", &template_path.display())
+                eprintln!(
+                    "ERROR: could not find template {path}",
+                    path = &template_path.display()
+                )
             }
         }
         symlink_dir_all(&entry, &dest_path, force)?;
@@ -173,8 +192,8 @@ fn run_sync_command(file: &File, config: &VarMap, force: &bool) -> Result<()> {
 fn run_link_command(file: &File, force: &bool) -> Result<()> {
     let globbed_path = glob(&resolve_home_dir(&file.target)).map_err(|err| {
         eprintln!(
-            "ERROR: could not parse target {target_path}: {err}",
-            target_path = &file.target
+            "ERROR: could not parse target {path}: {err}",
+            path = &file.target
         )
     })?;
     for entry in globbed_path {
@@ -193,8 +212,8 @@ fn run_link_command(file: &File, force: &bool) -> Result<()> {
 fn run_generate_command(file: &File, config: &VarMap) -> Result<()> {
     let globbed_path = glob(&resolve_home_dir(&file.target)).map_err(|err| {
         eprintln!(
-            "ERROR: could not parse target {target_path}: {err}",
-            target_path = &file.target
+            "ERROR: could not parse target {path}: {err}",
+            path = &file.target
         )
     })?;
     for entry in globbed_path {
@@ -204,7 +223,10 @@ fn run_generate_command(file: &File, config: &VarMap) -> Result<()> {
             if template_path.exists() {
                 generate_template(&template_path, &entry, config)?;
             } else {
-                eprintln!("ERROR: Template `{}` not found", &template_path.display())
+                eprintln!(
+                    "ERROR: could not find template {path}",
+                    path = &template_path.display()
+                )
             }
         }
     }
@@ -226,7 +248,10 @@ fn generate_template(
     config: &HashMap<String, String>,
 ) -> Result<()> {
     let data = fs::read_to_string(template).map_err(|err| {
-        eprintln!("ERROR: could not read file {}: {err}", template.display());
+        eprintln!(
+            "ERROR: could not read file {path}: {err}",
+            path = &template.display()
+        );
     })?;
 
     let mut engine = upon::Engine::new();
@@ -234,8 +259,8 @@ fn generate_template(
         .add_template(template.to_str().unwrap(), &data)
         .map_err(|err| {
             eprintln!(
-                "ERROR: could not add template {}: {err}",
-                template.display()
+                "ERROR: could not add template {path}: {err}",
+                path = &template.display()
             );
         })?;
     let rendered = engine
@@ -244,18 +269,18 @@ fn generate_template(
         .to_string()
         .map_err(|err| {
             eprintln!(
-                "ERROR: could not render template {}: {err}",
-                template.display()
+                "ERROR: could not render template {path}: {err}",
+                path = &template.display()
             );
         })?;
 
     fs::write(target, rendered).map_err(|err| {
         eprintln!(
-            "ERROR: could not write to file {target_path}: {err}",
-            target_path = target.display()
+            "ERROR: could not write to file {path}: {err}",
+            path = &target.display()
         );
     })?;
-    println!("INFO: Generated template `{}`", template.display());
+    println!("INFO: Generated template {}", template.display());
     Ok(())
 }
 
@@ -268,8 +293,8 @@ fn symlink_dir_all(target: &Path, dest: &Path, force: &bool) -> Result<()> {
             if !dest_parent_dir.exists() {
                 fs::create_dir_all(dest_parent_dir).map_err(|err| {
                     eprintln!(
-                        "ERROR: could not create dir {}: {err}",
-                        dest_parent_dir.display()
+                        "ERROR: could not create dir {path}: {err}",
+                        path = &dest_parent_dir.display()
                     );
                 })?;
             }
@@ -284,63 +309,50 @@ fn symlink_dir_all(target: &Path, dest: &Path, force: &bool) -> Result<()> {
 fn symlink_file(target: &Path, dest: &Path, force: &bool) -> Result<()> {
     match symlink(target, dest) {
         Ok(()) => {
-            println!(
-                "INFO: Symlinked `{}` -> `{}`",
-                target.display(),
-                dest.display()
-            );
+            println!("INFO: Symlinked {} to {}", target.display(), dest.display());
         }
         Err(err) => {
             match err.kind() {
                 io::ErrorKind::AlreadyExists => {
                     if *force {
                         println!(
-                            "WARNING: Destination `{}` already exists. Removing",
+                            "WARNING: Destination {} already exists. Removing",
                             dest.display()
                         );
                         std::fs::remove_file(dest).map_err(|err| {
-                            eprintln!("ERROR: could not remove file {}: {err}", dest.display());
+                            eprintln!(
+                                "ERROR: could not remove file {path}: {err}",
+                                path = &dest.display()
+                            );
                         })?;
                         symlink_file(target, dest, force)?;
-                        println!(
-                            "INFO: Symlinked `{}` -> `{}`",
-                            target.display(),
-                            dest.display()
-                        );
+                        println!("INFO: Symlinked {} to {}", target.display(), dest.display());
                         return Ok(());
                     }
                     if dest.is_symlink() {
                         let symlink_origin = dest.canonicalize().unwrap();
                         if target.canonicalize().unwrap() == symlink_origin {
-                            println!("INFO: Skipped symlinking `{}`. Up to date.", dest.display());
+                            println!("INFO: Skipped symlinking {}. Up to date.", dest.display());
                         } else {
                             println!(
-                                "WARNING: Destination `{}` is symlinked to `{}`. Resolve manually.",
+                                "WARNING: Destination {} is symlinked to {}. Resolve manually.",
                                 dest.display(),
                                 symlink_origin.display()
                             );
                         }
                     } else {
-                        println!("WARNING: Destination `{}` exists but it's not a symlink. Resolve manually", dest.display());
+                        println!("WARNING: Destination {} exists but it's not a symlink. Resolve manually", dest.display());
                     }
                 }
                 _ => {
                     eprintln!(
-                        "ERROR: Failed to symlink `{}` -> `{}`. {}",
-                        target.display(),
-                        dest.display(),
-                        err
+                        "ERROR: could not symlink {target_path} to {dest_path}: {err}",
+                        target_path = &target.display(),
+                        dest_path = &dest.display(),
                     );
                 }
             }
         }
     }
     Ok(())
-}
-
-fn main() -> ExitCode {
-    match entrypoint() {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(()) => ExitCode::FAILURE,
-    }
 }
