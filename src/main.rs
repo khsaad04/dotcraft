@@ -107,62 +107,32 @@ fn has_templates(manifest: &Manifest) -> bool {
 }
 
 fn execute_subcommands(cli: &Cli, manifest: &Manifest, config: &VarMap) -> Result<()> {
-    match &cli.command {
-        Some(cli::Commands::Sync {
-            force,
-            name: specified_name,
-        }) => {
-            if let Some(specified_name) = specified_name {
-                if let Some(file) = manifest.files.get(specified_name.as_str()) {
-                    run_sync_command(file, config, force)?;
-                } else {
-                    return Err(format!("could not find {specified_name}").into());
+    if let Some(cli::Commands::Sync { force, name })
+    | Some(cli::Commands::Link { force, name })
+    | Some(cli::Commands::Generate { force, name }) = &cli.command
+    {
+        if let Some(name) = name {
+            if let Some(file) = manifest.files.get(name.as_str()) {
+                symlink_files(file, *force)?;
+                if file.template.is_some() {
+                    generate_template(file, config)?;
                 }
             } else {
-                for (_, file) in manifest.files.iter() {
-                    run_sync_command(file, config, force)?;
+                return Err(format!("could not find {name}").into());
+            }
+        } else {
+            for (_, file) in manifest.files.iter() {
+                symlink_files(file, *force)?;
+                if file.template.is_some() {
+                    generate_template(file, config)?;
                 }
             }
-        }
-        Some(cli::Commands::Link {
-            force,
-            name: specified_name,
-        }) => {
-            if let Some(specified_name) = specified_name {
-                if let Some(file) = manifest.files.get(specified_name.as_str()) {
-                    run_link_command(file, force)?;
-                } else {
-                    return Err(format!("could not find {specified_name}").into());
-                }
-            } else {
-                for (_, file) in manifest.files.iter() {
-                    run_link_command(file, force)?;
-                }
-            }
-        }
-        Some(cli::Commands::Generate {
-            name: specified_name,
-        }) => {
-            if let Some(specified_name) = specified_name {
-                if let Some(file) = manifest.files.get(specified_name.as_str()) {
-                    run_generate_command(file, config)?;
-                } else {
-                    return Err(format!("could not find {specified_name}").into());
-                }
-            } else {
-                for (_, file) in manifest.files.iter() {
-                    run_generate_command(file, config)?;
-                }
-            }
-        }
-        None => {
-            unreachable!()
         }
     }
     Ok(())
 }
 
-fn run_sync_command(file: &File, config: &VarMap, force: &bool) -> Result<()> {
+fn symlink_files(file: &File, force: bool) -> Result<()> {
     let globbed_path = glob(&resolve_home_dir(&file.target)?)
         .map_err(|err| format!("could not parse target {path}: {err}", path = &file.target))?;
     for entry in globbed_path {
@@ -173,18 +143,6 @@ fn run_sync_command(file: &File, config: &VarMap, force: &bool) -> Result<()> {
         } else {
             dest_path
         };
-        if let Some(template_path) = &file.template {
-            let template_path = PathBuf::from(template_path);
-            if template_path.exists() {
-                generate_template(&template_path, &entry, config)?;
-            } else {
-                return Err(format!(
-                    "could not find template {path}",
-                    path = &template_path.display()
-                )
-                .into());
-            }
-        }
         symlink_dir_all(&entry, &dest_path, force)?;
     }
     Ok(())
@@ -197,86 +155,7 @@ fn resolve_home_dir(path: &str) -> Result<String> {
     Ok(result)
 }
 
-fn run_link_command(file: &File, force: &bool) -> Result<()> {
-    let globbed_path = glob(&resolve_home_dir(&file.target)?)
-        .map_err(|err| format!("could not parse target {path}: {err}", path = &file.target))?;
-    for entry in globbed_path {
-        let entry = entry?;
-        let dest_path = PathBuf::from(resolve_home_dir(&file.dest)?);
-        let dest_path = if dest_path.is_dir() {
-            dest_path.join(entry.iter().last().unwrap())
-        } else {
-            dest_path
-        };
-        symlink_dir_all(&entry, &dest_path, force)?;
-    }
-    Ok(())
-}
-
-fn run_generate_command(file: &File, config: &VarMap) -> Result<()> {
-    let globbed_path = glob(&resolve_home_dir(&file.target)?)
-        .map_err(|err| format!("could not parse target {path}: {err}", path = &file.target))?;
-    for entry in globbed_path {
-        let entry = entry?;
-        if let Some(template_path) = &file.template {
-            let template_path = PathBuf::from(template_path);
-            if template_path.exists() {
-                generate_template(&template_path, &entry, config)?;
-            } else {
-                return Err(format!(
-                    "could not find template {path}",
-                    path = &template_path.display()
-                )
-                .into());
-            }
-        }
-    }
-    Ok(())
-}
-
-fn generate_template(
-    template: &Path,
-    target: &Path,
-    config: &HashMap<String, String>,
-) -> Result<()> {
-    let data = fs::read_to_string(template).map_err(|err| {
-        format!(
-            "could not read file {path}: {err}",
-            path = &template.display()
-        )
-    })?;
-
-    let mut engine = upon::Engine::new();
-    engine
-        .add_template(template.to_str().unwrap(), &data)
-        .map_err(|err| {
-            format!(
-                "could not add template {path}: {err}",
-                path = &template.display()
-            )
-        })?;
-    let rendered = engine
-        .template(template.to_str().unwrap())
-        .render(config)
-        .to_string()
-        .map_err(|err| {
-            format!(
-                "could not render template {path}: {err}",
-                path = &template.display()
-            )
-        })?;
-
-    fs::write(target, rendered).map_err(|err| {
-        format!(
-            "could not write to file {path}: {err}",
-            path = &target.display()
-        )
-    })?;
-    println!("INFO: Generated template {}", template.display());
-    Ok(())
-}
-
-fn symlink_dir_all(target: &Path, dest: &Path, force: &bool) -> Result<()> {
+fn symlink_dir_all(target: &Path, dest: &Path, force: bool) -> Result<()> {
     if target.is_dir() {
         for entry in fs::read_dir(target)? {
             let entry = entry?;
@@ -298,7 +177,7 @@ fn symlink_dir_all(target: &Path, dest: &Path, force: &bool) -> Result<()> {
     Ok(())
 }
 
-fn symlink_file(target: &Path, dest: &Path, force: &bool) -> Result<()> {
+fn symlink_file(target: &Path, dest: &Path, force: bool) -> Result<()> {
     match symlink(target, dest) {
         Ok(()) => {
             println!("INFO: Symlinked {} to {}", target.display(), dest.display());
@@ -306,7 +185,7 @@ fn symlink_file(target: &Path, dest: &Path, force: &bool) -> Result<()> {
         Err(err) => {
             match err.kind() {
                 io::ErrorKind::AlreadyExists => {
-                    if *force {
+                    if force {
                         println!(
                             "WARNING: Destination {} already exists. Removing",
                             dest.display()
@@ -319,9 +198,7 @@ fn symlink_file(target: &Path, dest: &Path, force: &bool) -> Result<()> {
                         })?;
                         symlink(target, dest)?;
                         println!("INFO: Symlinked {} to {}", target.display(), dest.display());
-                        return Ok(());
-                    }
-                    if dest.is_symlink() {
+                    } else if dest.is_symlink() {
                         let symlink_origin = dest.canonicalize()?;
                         if target.canonicalize()? == symlink_origin {
                             println!("INFO: Skipped symlinking {}. Up to date.", dest.display());
@@ -345,6 +222,61 @@ fn symlink_file(target: &Path, dest: &Path, force: &bool) -> Result<()> {
                     .into());
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+fn generate_template(file: &File, config: &VarMap) -> Result<()> {
+    let target_path = PathBuf::from(&file.target).canonicalize().map_err(|err| {
+        format!(
+            "cannot generate template into {path}: {err}",
+            path = &file.target
+        )
+    })?;
+    if let Some(template_path) = &file.template {
+        let template_path = PathBuf::from(template_path);
+        if template_path.exists() {
+            let data = fs::read_to_string(&template_path).map_err(|err| {
+                format!(
+                    "could not read file {path}: {err}",
+                    path = &template_path.display()
+                )
+            })?;
+
+            let mut engine = upon::Engine::new();
+            engine
+                .add_template(template_path.to_str().unwrap(), &data)
+                .map_err(|err| {
+                    format!(
+                        "could not add template {path}: {err}",
+                        path = &template_path.display()
+                    )
+                })?;
+            let rendered = engine
+                .template(template_path.to_str().unwrap())
+                .render(config)
+                .to_string()
+                .map_err(|err| {
+                    format!(
+                        "could not render template {path}: {err}",
+                        path = &template_path.display()
+                    )
+                })?;
+
+            fs::write(&target_path, rendered).map_err(|err| {
+                format!(
+                    "could not write to file {path}: {err}",
+                    path = &target_path.display()
+                )
+            })?;
+            println!("INFO: Generated template {}", template_path.display());
+        } else {
+            return Err(format!(
+                "could not find template {path}",
+                path = &template_path.display()
+            )
+            .into());
         }
     }
     Ok(())

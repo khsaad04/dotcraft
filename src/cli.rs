@@ -31,6 +31,7 @@ pub enum Commands {
     /// Generate templates
     Generate {
         #[arg(short, long)]
+        force: bool,
         name: Option<String>,
     },
 }
