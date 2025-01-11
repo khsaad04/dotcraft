@@ -107,27 +107,57 @@ fn has_templates(manifest: &Manifest) -> bool {
 }
 
 fn execute_subcommands(cli: &Cli, manifest: &Manifest, config: &VarMap) -> Result<()> {
-    if let Some(cli::Commands::Sync { force, name })
-    | Some(cli::Commands::Link { force, name })
-    | Some(cli::Commands::Generate { force, name }) = &cli.command
-    {
-        if let Some(name) = name {
-            if let Some(file) = manifest.files.get(name.as_str()) {
-                symlink_files(file, *force)?;
-                if file.template.is_some() {
-                    generate_template(file, config)?;
+    match &cli.command {
+        Some(cli::Commands::Sync { force, name }) => {
+            if let Some(name) = name {
+                if let Some(file) = manifest.files.get(name.as_str()) {
+                    symlink_files(file, *force)?;
+                    if file.template.is_some() {
+                        generate_template(file, config)?;
+                    }
+                } else {
+                    return Err(format!("could not find {name}").into());
                 }
             } else {
-                return Err(format!("could not find {name}").into());
-            }
-        } else {
-            for (_, file) in manifest.files.iter() {
-                symlink_files(file, *force)?;
-                if file.template.is_some() {
-                    generate_template(file, config)?;
+                for (_, file) in manifest.files.iter() {
+                    symlink_files(file, *force)?;
+                    if file.template.is_some() {
+                        generate_template(file, config)?;
+                    }
                 }
             }
         }
+        Some(cli::Commands::Link { force, name }) => {
+            if let Some(name) = name {
+                if let Some(file) = manifest.files.get(name.as_str()) {
+                    symlink_files(file, *force)?;
+                } else {
+                    return Err(format!("could not find {name}").into());
+                }
+            } else {
+                for (_, file) in manifest.files.iter() {
+                    symlink_files(file, *force)?;
+                }
+            }
+        }
+        Some(cli::Commands::Generate { name }) => {
+            if let Some(name) = name {
+                if let Some(file) = manifest.files.get(name.as_str()) {
+                    if file.template.is_some() {
+                        generate_template(file, config)?;
+                    }
+                } else {
+                    return Err(format!("could not find {name}").into());
+                }
+            } else {
+                for (_, file) in manifest.files.iter() {
+                    if file.template.is_some() {
+                        generate_template(file, config)?;
+                    }
+                }
+            }
+        }
+        None => {}
     }
     Ok(())
 }
@@ -136,7 +166,7 @@ fn symlink_files(file: &File, force: bool) -> Result<()> {
     let globbed_path = glob(&resolve_home_dir(&file.target)?)
         .map_err(|err| format!("could not parse target {path}: {err}", path = &file.target))?;
     for entry in globbed_path {
-        let entry = entry?;
+        let entry = entry?.canonicalize()?;
         let dest_path = PathBuf::from(resolve_home_dir(&file.dest)?);
         let dest_path = if dest_path.is_dir() {
             dest_path.join(entry.iter().last().unwrap())
