@@ -6,7 +6,7 @@ use material_colors::{
 };
 use std::{collections::HashMap, path::Path};
 
-pub fn generate_material_colors(wp_path: &Path, dark: &bool, config: &mut VarMap) -> Result<()> {
+pub fn generate_material_colors(wp_path: &Path, theme: bool, config: &mut VarMap) -> Result<()> {
     let mut image = ImageReader::open(wp_path).map_err(|err| {
         format!(
             "could not read image {path}: {err}",
@@ -14,20 +14,20 @@ pub fn generate_material_colors(wp_path: &Path, dark: &bool, config: &mut VarMap
         )
     })?;
     image.resize(128, 128, FilterType::Lanczos3);
-    let theme = ThemeBuilder::with_source(ImageReader::extract_color(&image)).build();
+    let color_palette = ThemeBuilder::with_source(ImageReader::extract_color(&image)).build();
 
-    config.insert("source_color".to_string(), theme.source.to_hex());
+    config.insert("source_color".to_string(), color_palette.source.to_hex());
 
-    if *dark {
-        for (k, v) in theme.schemes.dark.into_iter() {
+    if theme {
+        for (k, v) in color_palette.schemes.dark.into_iter() {
             config.insert(k, v.to_hex());
         }
     } else {
-        for (k, v) in theme.schemes.light.into_iter() {
+        for (k, v) in color_palette.schemes.light.into_iter() {
             config.insert(k, v.to_hex());
         }
     }
-    generate_base16_colors(config, &theme.source.to_hex())?;
+    generate_base16_colors(config, &color_palette.source.to_hex())?;
     Ok(())
 }
 

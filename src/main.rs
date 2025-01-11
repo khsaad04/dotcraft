@@ -1,16 +1,14 @@
-mod cli;
 mod colors;
 mod error;
 
-use cli::Cli;
 use colors::generate_material_colors;
 use error::Result;
 
-use clap::Parser;
 use glob::glob;
 use serde::Deserialize;
 use std::{
     collections::HashMap,
+    env::Args,
     fs, io,
     os::unix::fs::symlink,
     path::{Path, PathBuf},
@@ -20,7 +18,7 @@ use std::{
 #[derive(Debug, Deserialize)]
 struct Manifest {
     wallpaper: Option<String>,
-    dark: Option<bool>,
+    theme: Option<bool>,
     files: HashMap<String, File>,
 }
 
@@ -33,62 +31,247 @@ struct File {
 
 type VarMap = HashMap<String, String>;
 
-fn main() {
-    let cli = cli::Cli::parse();
-    let mut config: VarMap = HashMap::new();
-    match parse_manifest_file(&cli.manifest) {
-        Ok(manifest) => {
-            if let Err(err) = parse_wallpaper(&manifest.wallpaper, &mut config, &manifest) {
-                eprintln!("{err}");
-                exit(1);
-            };
-            if let Err(err) = execute_subcommands(&cli, &manifest, &config) {
-                eprintln!("{err}");
-                exit(1);
-            };
-        }
-        Err(err) => {
-            eprintln!("{err}");
-            exit(1);
-        }
+const MAIN_USAGE: &str = "Usage: dotman [OPTION] <SUBCOMMAND>
+
+Options:
+  -m, --manifest <PATH>  custom path to manifest file [default: Manifest.toml]
+  -h, --help             show this help message
+
+Subcommands:
+  sync      symlink files and generate templates 
+  link      symlink files
+  generate  generate templates";
+
+const SYNC_USAGE: &str = "Symlink files and generate templates
+
+Usage: dotman sync [OPTIONS] [NAME]
+
+Arguments:
+  [NAME]       name of the specific file(s) to sync
+
+Options:
+  -f, --force  force remove existing files
+  -h, --help   show this help message";
+
+const LINK_USAGE: &str = "Symlink files
+
+Usage: dotman sync [OPTIONS] [NAME]
+
+Arguments:
+  [NAME]       name of the specific file(s) to link
+
+Options:
+  -f, --force  force remove existing files
+  -h, --help   show this help message";
+
+const GENERATE_USAGE: &str = "Generate templates
+
+Usage: dotman sync [OPTIONS] [NAME]
+
+Arguments:
+  [NAME]       name of the specific file(s) to generate
+
+Options:
+  -h, --help   show this help message";
+
+impl TryFrom<&Path> for Manifest {
+    type Error = error::Error;
+    fn try_from(value: &Path) -> std::result::Result<Self, Self::Error> {
+        let manifest_path = value
+            .canonicalize()
+            .map_err(|err| format!("could not find {path}: {err}", path = &value.display()))?;
+        let manifest_parent_dir = manifest_path.parent().unwrap();
+        std::env::set_current_dir(manifest_parent_dir).map_err(|err| {
+            format!(
+                "could not change directory to {path}: {err}",
+                path = &manifest_parent_dir.display()
+            )
+        })?;
+        let manifest: Manifest =
+            toml::from_str(&fs::read_to_string(&manifest_path).map_err(|err| {
+                format!(
+                    "could not read file {path}: {err}",
+                    path = &manifest_path.display()
+                )
+            })?)
+            .map_err(|err| {
+                format!(
+                    "could not parse toml {path}: {err}",
+                    path = &manifest_path.display()
+                )
+            })?;
+        Ok(manifest)
     }
 }
 
-fn parse_manifest_file(path: &Path) -> Result<Manifest> {
-    let manifest_path = path
-        .canonicalize()
-        .map_err(|err| format!("could not find {path}: {err}", path = &path.display()))?;
-    let manifest_parent_dir = manifest_path.parent().unwrap();
-    std::env::set_current_dir(manifest_parent_dir).map_err(|err| {
-        format!(
-            "could not change directory to {path}: {err}",
-            path = &manifest_parent_dir.display()
-        )
-    })?;
-    let manifest: Manifest =
-        toml::from_str(&fs::read_to_string(&manifest_path).map_err(|err| {
-            format!(
-                "could not read file {path}: {err}",
-                path = &manifest_path.display()
-            )
-        })?)
-        .map_err(|err| {
-            format!(
-                "could not parse toml {path}: {err}",
-                path = &manifest_path.display()
-            )
-        })?;
-    Ok(manifest)
+fn main() {
+    let mut args = std::env::args();
+    let _program_name = args.next();
+
+    let mut config: VarMap = HashMap::new();
+    if let Err(err) = parse_arguments(&mut args, &mut config) {
+        eprintln!("{err}");
+        exit(1);
+    }
 }
 
-fn parse_wallpaper(path: &Option<String>, config: &mut VarMap, manifest: &Manifest) -> Result<()> {
+fn parse_arguments(args: &mut Args, config: &mut VarMap) -> Result<()> {
+    let mut manifest_path = String::new();
+    if let Some(arg) = args.next() {
+        if arg.starts_with('-') {
+            match arg.as_str() {
+                "-m" | "--manifest" => {
+                    manifest_path.push_str(&args.next().unwrap());
+                }
+                "-h" | "--help" => {
+                    println!("{MAIN_USAGE}");
+                    return Ok(());
+                }
+                _ => {
+                    return Err(format!("flag {arg} not found.\n{MAIN_USAGE}").into());
+                }
+            }
+        } else {
+            if manifest_path.is_empty() {
+                manifest_path.push_str("Manifest.toml");
+            }
+            let manifest = Manifest::try_from(Path::new(&manifest_path))?;
+            create_color_palette(&manifest.wallpaper, config, &manifest)?;
+            match arg.as_str() {
+                "sync" => {
+                    let mut force = false;
+                    let mut name: Option<String> = None;
+                    if let Some(arg) = args.next() {
+                        if arg.starts_with('-') {
+                            match arg.as_str() {
+                                "-f" | "--force" => {
+                                    force = true;
+                                    name = args.next();
+                                }
+                                "-h" | "--help" => {
+                                    println!("{SYNC_USAGE}");
+                                    return Ok(());
+                                }
+                                _ => {
+                                    return Err(
+                                        format!("flag {arg} not found.\n{SYNC_USAGE}").into()
+                                    );
+                                }
+                            }
+                        } else {
+                            name = Some(arg);
+                        }
+                    }
+                    if let Some(name) = name {
+                        if let Some(file) = manifest.files.get(&name) {
+                            symlink_files(file, force)?;
+                            if file.template.is_some() {
+                                generate_template(file, config)?;
+                            }
+                        } else {
+                            return Err(format!("could not find {}", &name).into());
+                        }
+                    } else {
+                        for (_, file) in manifest.files.iter() {
+                            symlink_files(file, force)?;
+                            if file.template.is_some() {
+                                generate_template(file, config)?;
+                            }
+                        }
+                    }
+                }
+                "link" => {
+                    let mut force = false;
+                    let mut name: Option<String> = None;
+                    if let Some(arg) = args.next() {
+                        if arg.starts_with('-') {
+                            match arg.as_str() {
+                                "-f" | "--force" => {
+                                    force = true;
+                                    name = args.next();
+                                }
+                                "-h" | "--help" => {
+                                    println!("{LINK_USAGE}");
+                                    return Ok(());
+                                }
+                                _ => {
+                                    return Err(
+                                        format!("flag {arg} not found.\n{LINK_USAGE}").into()
+                                    );
+                                }
+                            }
+                        } else {
+                            name = Some(arg);
+                        }
+                    }
+                    if let Some(name) = name {
+                        if let Some(file) = manifest.files.get(&name) {
+                            symlink_files(file, force)?;
+                        } else {
+                            return Err(format!("could not find {}", &name).into());
+                        }
+                    } else {
+                        for (_, file) in manifest.files.iter() {
+                            symlink_files(file, force)?;
+                        }
+                    }
+                }
+                "generate" => {
+                    let mut name: Option<String> = None;
+                    if let Some(arg) = args.next() {
+                        if arg.starts_with('-') {
+                            match arg.as_str() {
+                                "-h" | "--help" => {
+                                    println!("{GENERATE_USAGE}");
+                                    return Ok(());
+                                }
+                                _ => {
+                                    return Err(
+                                        format!("flag {arg} not found.\n{GENERATE_USAGE}").into()
+                                    );
+                                }
+                            }
+                        } else {
+                            name = Some(arg);
+                        }
+                    }
+                    if let Some(name) = name {
+                        if let Some(file) = manifest.files.get(&name) {
+                            if file.template.is_some() {
+                                generate_template(file, config)?;
+                            }
+                        } else {
+                            return Err(format!("could not find {}", &name).into());
+                        }
+                    } else {
+                        for (_, file) in manifest.files.iter() {
+                            if file.template.is_some() {
+                                generate_template(file, config)?;
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    return Err(format!("subcommand {arg} not found.\n{MAIN_USAGE}").into());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn create_color_palette(
+    path: &Option<String>,
+    config: &mut VarMap,
+    manifest: &Manifest,
+) -> Result<()> {
     if let Some(wallpaper) = path {
         let wp_path = PathBuf::from(&wallpaper)
             .canonicalize()
             .map_err(|err| format!("could not find {wallpaper}: {err}"))?;
         config.insert("wallpaper".to_string(), wp_path.display().to_string());
-        let scheme = manifest.dark.unwrap_or(true);
-        generate_material_colors(&wp_path, &scheme, config)?;
+        let theme = manifest.theme.unwrap_or(true);
+        generate_material_colors(&wp_path, theme, config)?;
     } else if has_templates(manifest) {
         return Err("could not generate color palette: `wallpaper` is not set.".into());
     } else {
@@ -104,62 +287,6 @@ fn has_templates(manifest: &Manifest) -> bool {
         }
     }
     false
-}
-
-fn execute_subcommands(cli: &Cli, manifest: &Manifest, config: &VarMap) -> Result<()> {
-    match &cli.command {
-        Some(cli::Commands::Sync { force, name }) => {
-            if let Some(name) = name {
-                if let Some(file) = manifest.files.get(name.as_str()) {
-                    symlink_files(file, *force)?;
-                    if file.template.is_some() {
-                        generate_template(file, config)?;
-                    }
-                } else {
-                    return Err(format!("could not find {name}").into());
-                }
-            } else {
-                for (_, file) in manifest.files.iter() {
-                    symlink_files(file, *force)?;
-                    if file.template.is_some() {
-                        generate_template(file, config)?;
-                    }
-                }
-            }
-        }
-        Some(cli::Commands::Link { force, name }) => {
-            if let Some(name) = name {
-                if let Some(file) = manifest.files.get(name.as_str()) {
-                    symlink_files(file, *force)?;
-                } else {
-                    return Err(format!("could not find {name}").into());
-                }
-            } else {
-                for (_, file) in manifest.files.iter() {
-                    symlink_files(file, *force)?;
-                }
-            }
-        }
-        Some(cli::Commands::Generate { name }) => {
-            if let Some(name) = name {
-                if let Some(file) = manifest.files.get(name.as_str()) {
-                    if file.template.is_some() {
-                        generate_template(file, config)?;
-                    }
-                } else {
-                    return Err(format!("could not find {name}").into());
-                }
-            } else {
-                for (_, file) in manifest.files.iter() {
-                    if file.template.is_some() {
-                        generate_template(file, config)?;
-                    }
-                }
-            }
-        }
-        None => {}
-    }
-    Ok(())
 }
 
 fn symlink_files(file: &File, force: bool) -> Result<()> {
