@@ -7,7 +7,7 @@ use material_colors::{
 };
 use std::{collections::HashMap, path::Path};
 
-pub fn generate_material_colors(wp_path: &Path, theme: bool, config: &mut VarMap) -> Result<()> {
+pub fn generate_material_colors(wp_path: &Path, theme: &str, config: &mut VarMap) -> Result<()> {
     let mut image = ImageReader::open(wp_path).map_err(|err| {
         format!(
             "could not read image {path}: {err}",
@@ -19,14 +19,16 @@ pub fn generate_material_colors(wp_path: &Path, theme: bool, config: &mut VarMap
 
     config.insert("source_color".to_string(), color_palette.source.to_hex());
 
-    if theme {
+    if theme == "dark" {
         for (k, v) in color_palette.schemes.dark.into_iter() {
             config.insert(k, v.to_hex());
         }
-    } else {
+    } else if theme == "light" {
         for (k, v) in color_palette.schemes.light.into_iter() {
             config.insert(k, v.to_hex());
         }
+    } else {
+        return Err(format!("invalid theme {theme}").into());
     }
     generate_base16_colors(config, &color_palette.source);
     Ok(())

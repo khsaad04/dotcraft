@@ -18,7 +18,7 @@ use std::{
 #[derive(Debug, Deserialize)]
 struct Manifest {
     wallpaper: Option<String>,
-    theme: Option<bool>,
+    theme: Option<String>,
     files: HashMap<String, File>,
 }
 
@@ -270,8 +270,8 @@ fn create_color_palette(
             .canonicalize()
             .map_err(|err| format!("could not find {wallpaper}: {err}"))?;
         config.insert("wallpaper".to_string(), wp_path.display().to_string());
-        let theme = manifest.theme.unwrap_or(true);
-        generate_material_colors(&wp_path, theme, config)?;
+        let theme = manifest.theme.clone().unwrap_or("dark".to_string());
+        generate_material_colors(&wp_path, &theme, config)?;
     } else if has_templates(manifest) {
         return Err("could not generate color palette: `wallpaper` is not set.".into());
     } else {
