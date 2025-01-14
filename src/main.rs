@@ -295,19 +295,19 @@ fn symlink_files(file: &File, force: bool) -> Result<()> {
     for entry in globbed_path {
         let entry = entry?.canonicalize()?;
         let dest_path = PathBuf::from(resolve_home_dir(&file.dest)?);
-        let dest_path = if dest_path.is_dir() {
-            dest_path.join(entry.iter().last().unwrap())
+        if dest_path.is_dir() {
+            symlink_dir_all(&entry, &dest_path.join(entry.file_name().unwrap()), force)?;
         } else {
-            dest_path
+            symlink_dir_all(&entry, &dest_path, force)?;
         };
-        symlink_dir_all(&entry, &dest_path, force)?;
     }
     Ok(())
 }
 
 fn resolve_home_dir(path: &str) -> Result<String> {
     let mut result = String::new();
-    let home_dir = std::env::var("HOME")?;
+    let home_dir =
+        std::env::var("HOME").map_err(|err| format!("could not find home directory: {err}"))?;
     result.push_str(&path.replace('~', &home_dir).replace("$HOME", &home_dir));
     Ok(result)
 }
