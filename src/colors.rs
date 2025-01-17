@@ -37,14 +37,14 @@ pub fn generate_material_colors(wp_path: &Path, theme: &str, config: &mut VarMap
 pub fn generate_base16_colors(config: &mut HashMap<String, String>, source_color: &Argb) {
     let base16: [(&str, &Argb); 16] = [
         ("base0", &Argb::new(255, 0, 0, 0)),
-        ("base1", &Argb::new(255, 255, 0, 0)),
-        ("base2", &Argb::new(255, 0, 255, 0)),
-        ("base3", &Argb::new(255, 255, 255, 0)),
-        ("base4", &Argb::new(255, 0, 0, 255)),
-        ("base5", &Argb::new(255, 255, 0, 255)),
-        ("base6", &Argb::new(255, 0, 255, 255)),
-        ("base7", &Argb::new(255, 255, 255, 255)),
-        ("base8", &Argb::new(255, 0, 0, 0)),
+        ("base1", &Argb::new(255, 128, 0, 0)),
+        ("base2", &Argb::new(255, 0, 128, 0)),
+        ("base3", &Argb::new(255, 128, 128, 0)),
+        ("base4", &Argb::new(255, 0, 0, 128)),
+        ("base5", &Argb::new(255, 128, 0, 128)),
+        ("base6", &Argb::new(255, 0, 128, 128)),
+        ("base7", &Argb::new(255, 192, 192, 192)),
+        ("base8", &Argb::new(255, 128, 128, 128)),
         ("base9", &Argb::new(255, 255, 0, 0)),
         ("base10", &Argb::new(255, 0, 255, 0)),
         ("base11", &Argb::new(255, 255, 255, 0)),
@@ -53,22 +53,15 @@ pub fn generate_base16_colors(config: &mut HashMap<String, String>, source_color
         ("base14", &Argb::new(255, 0, 255, 255)),
         ("base15", &Argb::new(255, 255, 255, 255)),
     ];
-    for (i, (name, value)) in base16.into_iter().enumerate() {
-        let mut weight = 0.3;
-        if i > 7 {
-            weight = 0.5;
-        }
-        let new_color = blend_color(value, source_color, weight);
+    for (name, value) in base16.into_iter() {
+        let new_color = blend_color(value, source_color);
         config.insert(name.to_string(), new_color.to_hex());
     }
 }
 
-fn blend_color(first: &Argb, second: &Argb, weight: f32) -> Argb {
-    let w = weight * 2.0 - 1.0;
-    let w1 = (w / 2.0) + 0.5;
-    let w2 = 1.0 - w1;
-    let r = (first.red as f32 * w1 + second.red as f32 * w2) as u8;
-    let g = (first.green as f32 * w1 + second.green as f32 * w2) as u8;
-    let b = (first.blue as f32 * w1 + second.blue as f32 * w2) as u8;
+fn blend_color(first: &Argb, second: &Argb) -> Argb {
+    let r = (first.red as f32 * 0.5 + second.red as f32 * 0.5) as u8;
+    let g = (first.green as f32 * 0.5 + second.green as f32 * 0.5) as u8;
+    let b = (first.blue as f32 * 0.5 + second.blue as f32 * 0.5) as u8;
     Argb::new(255, r, g, b)
 }
