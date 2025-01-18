@@ -31,6 +31,7 @@ pub fn generate_material_colors(wp_path: &Path, theme: &str, config: &mut VarMap
         return Err(format!("invalid theme {theme}").into());
     }
     generate_base16_colors(config, &color_palette.source);
+    config.insert("theme".to_string(), theme.to_string());
     Ok(())
 }
 
