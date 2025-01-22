@@ -31,48 +31,16 @@ struct File {
 
 type VarMap = HashMap<String, String>;
 
-const MAIN_USAGE: &str = "Usage: dotman [OPTION] <SUBCOMMAND>
+const USAGE: &str = "Usage: dotman [OPTION] <SUBCOMMAND>
 
 Options:
   -m, --manifest <PATH>  custom path to manifest file [default: Manifest.toml]
   -h, --help             show this help message
 
 Subcommands:
-  sync      symlink files and generate templates 
-  link      symlink files
-  generate  generate templates";
-
-const SYNC_USAGE: &str = "Symlink files and generate templates
-
-Usage: dotman sync [OPTIONS] [NAME]
-
-Arguments:
-  [NAME]       name of the specific file(s) to sync
-
-Options:
-  -f, --force  force remove existing files
-  -h, --help   show this help message";
-
-const LINK_USAGE: &str = "Symlink files
-
-Usage: dotman sync [OPTIONS] [NAME]
-
-Arguments:
-  [NAME]       name of the specific file(s) to link
-
-Options:
-  -f, --force  force remove existing files
-  -h, --help   show this help message";
-
-const GENERATE_USAGE: &str = "Generate templates
-
-Usage: dotman sync [OPTIONS] [NAME]
-
-Arguments:
-  [NAME]       name of the specific file(s) to generate
-
-Options:
-  -h, --help   show this help message";
+  sync      [-f | --force] [NAME] symlink files and generate templates 
+  link      [-f | --force] [NAME] symlink files
+  generate  [NAME] generate templates";
 
 impl TryFrom<&Path> for Manifest {
     type Error = error::Error;
@@ -124,11 +92,11 @@ fn parse_arguments(args: &mut Args, config: &mut VarMap) -> Result<()> {
                     manifest_path.push_str(&args.next().unwrap());
                 }
                 "-h" | "--help" => {
-                    println!("{MAIN_USAGE}");
+                    println!("{USAGE}");
                     return Ok(());
                 }
                 _ => {
-                    return Err(format!("flag {arg} not found.\n{MAIN_USAGE}").into());
+                    return Err(format!("flag {arg} not found.\n{USAGE}").into());
                 }
             }
         } else {
@@ -149,13 +117,11 @@ fn parse_arguments(args: &mut Args, config: &mut VarMap) -> Result<()> {
                                     name = args.next();
                                 }
                                 "-h" | "--help" => {
-                                    println!("{SYNC_USAGE}");
+                                    println!("{USAGE}");
                                     return Ok(());
                                 }
                                 _ => {
-                                    return Err(
-                                        format!("flag {arg} not found.\n{SYNC_USAGE}").into()
-                                    );
+                                    return Err(format!("flag {arg} not found.\n{USAGE}").into());
                                 }
                             }
                         } else {
@@ -191,13 +157,11 @@ fn parse_arguments(args: &mut Args, config: &mut VarMap) -> Result<()> {
                                     name = args.next();
                                 }
                                 "-h" | "--help" => {
-                                    println!("{LINK_USAGE}");
+                                    println!("{USAGE}");
                                     return Ok(());
                                 }
                                 _ => {
-                                    return Err(
-                                        format!("flag {arg} not found.\n{LINK_USAGE}").into()
-                                    );
+                                    return Err(format!("flag {arg} not found.\n{USAGE}").into());
                                 }
                             }
                         } else {
@@ -222,13 +186,11 @@ fn parse_arguments(args: &mut Args, config: &mut VarMap) -> Result<()> {
                         if arg.starts_with('-') {
                             match arg.as_str() {
                                 "-h" | "--help" => {
-                                    println!("{GENERATE_USAGE}");
+                                    println!("{USAGE}");
                                     return Ok(());
                                 }
                                 _ => {
-                                    return Err(
-                                        format!("flag {arg} not found.\n{GENERATE_USAGE}").into()
-                                    );
+                                    return Err(format!("flag {arg} not found.\n{USAGE}").into());
                                 }
                             }
                         } else {
@@ -252,7 +214,7 @@ fn parse_arguments(args: &mut Args, config: &mut VarMap) -> Result<()> {
                     }
                 }
                 _ => {
-                    return Err(format!("subcommand {arg} not found.\n{MAIN_USAGE}").into());
+                    return Err(format!("subcommand {arg} not found.\n{USAGE}").into());
                 }
             }
         }
