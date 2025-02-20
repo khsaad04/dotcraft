@@ -237,7 +237,7 @@ fn create_color_palette(
     } else if has_templates(manifest) {
         return Err("could not generate color palette: `wallpaper` is not set.".into());
     } else {
-        println!("WARNING: Skipping color scheme generation.");
+        println!("\x1b[0;33mWARNING\x1b[0m: Skipping color scheme generation.");
     }
     Ok(())
 }
@@ -299,49 +299,58 @@ fn symlink_dir_all(target: &Path, dest: &Path, force: bool) -> Result<()> {
 fn symlink_file(target: &Path, dest: &Path, force: bool) -> Result<()> {
     match symlink(target, dest) {
         Ok(()) => {
-            println!("INFO: Symlinked {} to {}", target.display(), dest.display());
+            println!(
+                "\x1b[0;32mINFO\x1b[0m: Symlinked {} to {}",
+                target.display(),
+                dest.display()
+            );
         }
-        Err(err) => {
-            match err.kind() {
-                io::ErrorKind::AlreadyExists => {
-                    if force {
+        Err(err) => match err.kind() {
+            io::ErrorKind::AlreadyExists => {
+                if force {
+                    println!(
+                        "\x1b[0;33mWARNING\x1b[0m: Destination {} already exists. Removing",
+                        dest.display()
+                    );
+                    std::fs::remove_file(dest).map_err(|err| {
+                        format!(
+                            "could not remove file {path}: {err}",
+                            path = &dest.display()
+                        )
+                    })?;
+                    symlink(target, dest)?;
+                    println!(
+                        "\x1b[0;32mINFO\x1b[0m: Symlinked {} to {}",
+                        target.display(),
+                        dest.display()
+                    );
+                } else if dest.is_symlink() {
+                    let symlink_origin = dest.canonicalize()?;
+                    if target.canonicalize()? == symlink_origin {
                         println!(
-                            "WARNING: Destination {} already exists. Removing",
+                            "\x1b[0;32mINFO\x1b[0m: Skipped symlinking {}. Up to date.",
                             dest.display()
                         );
-                        std::fs::remove_file(dest).map_err(|err| {
-                            format!(
-                                "could not remove file {path}: {err}",
-                                path = &dest.display()
-                            )
-                        })?;
-                        symlink(target, dest)?;
-                        println!("INFO: Symlinked {} to {}", target.display(), dest.display());
-                    } else if dest.is_symlink() {
-                        let symlink_origin = dest.canonicalize()?;
-                        if target.canonicalize()? == symlink_origin {
-                            println!("INFO: Skipped symlinking {}. Up to date.", dest.display());
-                        } else {
-                            println!(
-                                "WARNING: Destination {} is symlinked to {}. Resolve manually.",
+                    } else {
+                        println!(
+                                "\x1b[0;33mWARNING\x1b[0m: Destination {} is symlinked to {}. Resolve manually.",
                                 dest.display(),
                                 symlink_origin.display()
                             );
-                        }
-                    } else {
-                        println!("WARNING: Destination {} exists but it's not a symlink. Resolve manually", dest.display());
                     }
-                }
-                _ => {
-                    return Err(format!(
-                        "could not symlink {target_path} to {dest_path}: {err}",
-                        target_path = &target.display(),
-                        dest_path = &dest.display(),
-                    )
-                    .into());
+                } else {
+                    println!("\x1b[0;33mWARNING\x1b[0m: Destination {} exists but it's not a symlink. Resolve manually", dest.display());
                 }
             }
-        }
+            _ => {
+                return Err(format!(
+                    "could not symlink {target_path} to {dest_path}: {err}",
+                    target_path = &target.display(),
+                    dest_path = &dest.display(),
+                )
+                .into());
+            }
+        },
     }
     Ok(())
 }
@@ -389,7 +398,10 @@ fn generate_template(file: &File, config: &VarMap) -> Result<()> {
                     path = &target_path.display()
                 )
             })?;
-            println!("INFO: Generated template {}", template_path.display());
+            println!(
+                "\x1b[0;32mINFO\x1b[0m: Generated template {}",
+                template_path.display()
+            );
         } else {
             return Err(format!(
                 "could not find template {path}",

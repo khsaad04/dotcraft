@@ -8,7 +8,7 @@ pub struct Error {
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ERROR: {}", self.ctx)
+        write!(f, "\x1b[0;31mERROR\x1b[0m: {}", self.ctx)
     }
 }
 
