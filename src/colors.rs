@@ -1,4 +1,5 @@
-use crate::{Result, VarMap};
+use crate::error::Result;
+use crate::VarMap;
 
 use material_colors::{
     color::Argb,

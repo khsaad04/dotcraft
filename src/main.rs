@@ -1,9 +1,6 @@
 mod colors;
 mod error;
 
-use colors::generate_material_colors;
-use error::Result;
-
 use glob::glob;
 use serde::Deserialize;
 use std::{
@@ -16,31 +13,18 @@ use std::{
 };
 
 #[derive(Debug, Deserialize)]
-struct Manifest {
-    wallpaper: Option<String>,
-    theme: Option<String>,
-    files: HashMap<String, File>,
-}
-
-#[derive(Debug, Deserialize)]
 struct File {
     target: String,
     dest: String,
     template: Option<String>,
 }
 
-type VarMap = HashMap<String, String>;
-
-const USAGE: &str = "Usage: dotman [OPTION] <SUBCOMMAND>
-
-Options:
-  -m, --manifest <PATH>  custom path to manifest file [default: Manifest.toml]
-  -h, --help             show this help message
-
-Subcommands:
-  sync      [-f | --force] [NAME] symlink files and generate templates 
-  link      [-f | --force] [NAME] symlink files
-  generate  [NAME] generate templates";
+#[derive(Debug, Deserialize)]
+struct Manifest {
+    wallpaper: Option<String>,
+    theme: Option<String>,
+    files: HashMap<String, File>,
+}
 
 impl TryFrom<&Path> for Manifest {
     type Error = error::Error;
@@ -72,6 +56,38 @@ impl TryFrom<&Path> for Manifest {
     }
 }
 
+type VarMap = HashMap<String, String>;
+
+const USAGE: &str = "Usage: dotman [OPTION] <SUBCOMMAND>
+
+Options:
+  -m, --manifest <PATH>  custom path to manifest file [default: Manifest.toml]
+  -h, --help             show this help message
+
+Subcommands:
+  sync      [-f | --force] [NAME] symlink files and generate templates 
+  link      [-f | --force] [NAME] symlink files
+  generate  [NAME] generate templates";
+
+enum LogLevel {
+    Info,
+    Warning,
+}
+
+macro_rules! log {
+    ($loglevel:ident, $($arg:tt)*) => {
+        match LogLevel::$loglevel {
+            LogLevel::Info => {
+                print!("\x1b[0;32mINFO\x1b[0m: ");
+            }
+            LogLevel::Warning => {
+                print!("\x1b[0;33mWARNING\x1b[0m: ");
+            }
+        }
+        println!($($arg)*);
+    };
+}
+
 fn main() {
     let mut args = std::env::args();
     let _program_name = args.next();
@@ -83,7 +99,7 @@ fn main() {
     }
 }
 
-fn parse_arguments(args: &mut Args, config: &mut VarMap) -> Result<()> {
+fn parse_arguments(args: &mut Args, config: &mut VarMap) -> error::Result<()> {
     let mut manifest_path = String::new();
     if let Some(arg) = args.next() {
         if arg.starts_with('-') {
@@ -226,18 +242,18 @@ fn create_color_palette(
     path: &Option<String>,
     config: &mut VarMap,
     manifest: &Manifest,
-) -> Result<()> {
+) -> error::Result<()> {
     if let Some(wallpaper) = path {
         let wp_path = PathBuf::from(&wallpaper)
             .canonicalize()
             .map_err(|err| format!("could not find {wallpaper}: {err}"))?;
         config.insert("wallpaper".to_string(), wp_path.display().to_string());
         let theme = manifest.theme.clone().unwrap_or("dark".to_string());
-        generate_material_colors(&wp_path, &theme, config)?;
+        colors::generate_material_colors(&wp_path, &theme, config)?;
     } else if has_templates(manifest) {
         return Err("could not generate color palette: `wallpaper` is not set.".into());
     } else {
-        println!("\x1b[0;33mWARNING\x1b[0m: Skipping color scheme generation.");
+        log!(Warning, "Skipping color scheme generation.");
     }
     Ok(())
 }
@@ -251,7 +267,7 @@ fn has_templates(manifest: &Manifest) -> bool {
     false
 }
 
-fn symlink_files(file: &File, force: bool) -> Result<()> {
+fn symlink_files(file: &File, force: bool) -> error::Result<()> {
     let globbed_path = glob(&resolve_home_dir(&file.target)?)
         .map_err(|err| format!("could not parse target {path}: {err}", path = &file.target))?;
     for entry in globbed_path {
@@ -266,7 +282,7 @@ fn symlink_files(file: &File, force: bool) -> Result<()> {
     Ok(())
 }
 
-fn resolve_home_dir(path: &str) -> Result<String> {
+fn resolve_home_dir(path: &str) -> error::Result<String> {
     let mut result = String::new();
     let home_dir =
         std::env::var("HOME").map_err(|err| format!("could not find home directory: {err}"))?;
@@ -274,7 +290,7 @@ fn resolve_home_dir(path: &str) -> Result<String> {
     Ok(result)
 }
 
-fn symlink_dir_all(target: &Path, dest: &Path, force: bool) -> Result<()> {
+fn symlink_dir_all(target: &Path, dest: &Path, force: bool) -> error::Result<()> {
     if target.is_dir() {
         for entry in fs::read_dir(target)? {
             let entry = entry?;
@@ -296,20 +312,17 @@ fn symlink_dir_all(target: &Path, dest: &Path, force: bool) -> Result<()> {
     Ok(())
 }
 
-fn symlink_file(target: &Path, dest: &Path, force: bool) -> Result<()> {
+fn symlink_file(target: &Path, dest: &Path, force: bool) -> error::Result<()> {
     match symlink(target, dest) {
         Ok(()) => {
-            println!(
-                "\x1b[0;32mINFO\x1b[0m: Symlinked {} to {}",
-                target.display(),
-                dest.display()
-            );
+            log!(Info, "Symlinked {} to {}", target.display(), dest.display());
         }
         Err(err) => match err.kind() {
             io::ErrorKind::AlreadyExists => {
                 if force {
-                    println!(
-                        "\x1b[0;33mWARNING\x1b[0m: Destination {} already exists. Removing",
+                    log!(
+                        Warning,
+                        "Destination {} already exists. Removing",
                         dest.display()
                     );
                     std::fs::remove_file(dest).map_err(|err| {
@@ -319,27 +332,25 @@ fn symlink_file(target: &Path, dest: &Path, force: bool) -> Result<()> {
                         )
                     })?;
                     symlink(target, dest)?;
-                    println!(
-                        "\x1b[0;32mINFO\x1b[0m: Symlinked {} to {}",
-                        target.display(),
-                        dest.display()
-                    );
+                    log!(Info, "Symlinked {} to {}", target.display(), dest.display());
                 } else if dest.is_symlink() {
                     let symlink_origin = dest.canonicalize()?;
                     if target.canonicalize()? == symlink_origin {
-                        println!(
-                            "\x1b[0;32mINFO\x1b[0m: Skipped symlinking {}. Up to date.",
-                            dest.display()
-                        );
+                        log!(Info, "Skipped symlinking {}. Up to date.", dest.display());
                     } else {
-                        println!(
-                                "\x1b[0;33mWARNING\x1b[0m: Destination {} is symlinked to {}. Resolve manually.",
-                                dest.display(),
-                                symlink_origin.display()
-                            );
+                        log!(
+                            Warning,
+                            "Destination {} is symlinked to {}. Resolve manually.",
+                            dest.display(),
+                            symlink_origin.display()
+                        );
                     }
                 } else {
-                    println!("\x1b[0;33mWARNING\x1b[0m: Destination {} exists but it's not a symlink. Resolve manually", dest.display());
+                    log!(
+                        Warning,
+                        "Destination {} exists but it's not a symlink. Resolve manually",
+                        dest.display()
+                    );
                 }
             }
             _ => {
@@ -355,7 +366,7 @@ fn symlink_file(target: &Path, dest: &Path, force: bool) -> Result<()> {
     Ok(())
 }
 
-fn generate_template(file: &File, config: &VarMap) -> Result<()> {
+fn generate_template(file: &File, config: &VarMap) -> error::Result<()> {
     let target_path = PathBuf::from(&file.target).canonicalize().map_err(|err| {
         format!(
             "cannot generate template into {path}: {err}",
@@ -398,10 +409,7 @@ fn generate_template(file: &File, config: &VarMap) -> Result<()> {
                     path = &target_path.display()
                 )
             })?;
-            println!(
-                "\x1b[0;32mINFO\x1b[0m: Generated template {}",
-                template_path.display()
-            );
+            log!(Info, "Generated template {}", template_path.display());
         } else {
             return Err(format!(
                 "could not find template {path}",
