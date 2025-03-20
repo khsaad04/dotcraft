@@ -337,16 +337,28 @@ fn symlink_file(target: &Path, dest: &Path, force: bool) -> error::Result<()> {
                     symlink(target, dest)?;
                     log!(Info, "Symlinked {} to {}", target.display(), dest.display());
                 } else if dest.is_symlink() {
-                    let symlink_origin = dest.canonicalize()?;
-                    if target.canonicalize()? == symlink_origin {
-                        log!(Info, "Skipped symlinking {}. Up to date.", dest.display());
+                    if !dest.exists() {
+                        log!(Warning, "Destination is a broken symlink. Ignoring",);
+                        std::fs::remove_file(dest).map_err(|err| {
+                            format!(
+                                "could not remove file {path}: {err}",
+                                path = &dest.display()
+                            )
+                        })?;
+                        symlink(target, dest)?;
+                        log!(Info, "Symlinked {} to {}", target.display(), dest.display());
                     } else {
-                        log!(
-                            Warning,
-                            "Destination {} is symlinked to {}. Resolve manually.",
-                            dest.display(),
-                            symlink_origin.display()
-                        );
+                        let symlink_origin = dest.canonicalize()?;
+                        if target.canonicalize()? == symlink_origin {
+                            log!(Info, "Skipped symlinking {}. Up to date.", dest.display());
+                        } else {
+                            log!(
+                                Warning,
+                                "Destination {} is symlinked to {}. Resolve manually.",
+                                dest.display(),
+                                symlink_origin.display()
+                            );
+                        }
                     }
                 } else {
                     log!(
