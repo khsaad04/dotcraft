@@ -2,6 +2,7 @@ mod colors;
 mod error;
 
 use glob::glob;
+use indexmap::IndexMap;
 use serde::Deserialize;
 use std::{
     collections::HashMap,
@@ -23,7 +24,7 @@ struct File {
 struct Manifest {
     wallpaper: Option<String>,
     theme: Option<String>,
-    files: HashMap<String, File>,
+    files: IndexMap<String, File>,
 }
 
 impl TryFrom<&Path> for Manifest {
