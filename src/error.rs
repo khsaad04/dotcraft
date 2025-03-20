@@ -49,11 +49,3 @@ impl From<num::ParseIntError> for Error {
         }
     }
 }
-
-impl From<glob::GlobError> for Error {
-    fn from(value: glob::GlobError) -> Self {
-        Self {
-            ctx: format!("{value}"),
-        }
-    }
-}

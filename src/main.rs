@@ -1,7 +1,6 @@
 mod colors;
 mod error;
 
-use glob::glob;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use std::{
@@ -272,17 +271,17 @@ fn has_templates(manifest: &Manifest) -> bool {
 }
 
 fn symlink_files(file: &File, force: bool) -> error::Result<()> {
-    let globbed_path = glob(&resolve_home_dir(&file.target)?)
-        .map_err(|err| format!("could not parse target {path}: {err}", path = &file.target))?;
-    for entry in globbed_path {
-        let entry = entry?.canonicalize()?;
-        let dest_path = PathBuf::from(resolve_home_dir(&file.dest)?);
-        if dest_path.is_dir() {
-            symlink_dir_all(&entry, &dest_path.join(entry.file_name().unwrap()), force)?;
-        } else {
-            symlink_dir_all(&entry, &dest_path, force)?;
-        };
-    }
+    let target_path = PathBuf::from(resolve_home_dir(&file.target)?).canonicalize()?;
+    let dest_path = PathBuf::from(resolve_home_dir(&file.dest)?);
+    if dest_path.is_dir() {
+        symlink_dir_all(
+            &target_path,
+            &dest_path.join(target_path.file_name().unwrap()),
+            force,
+        )?;
+    } else {
+        symlink_dir_all(&target_path, &dest_path, force)?;
+    };
     Ok(())
 }
 
