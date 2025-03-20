@@ -100,139 +100,142 @@ fn main() {
 }
 
 fn parse_arguments(args: &mut Args, config: &mut VarMap) -> error::Result<()> {
-    let mut manifest_path = String::new();
-    if let Some(arg) = args.next() {
-        if arg.starts_with('-') {
-            match arg.as_str() {
-                "-m" | "--manifest" => {
-                    manifest_path.push_str(&args.next().unwrap());
-                }
-                "-h" | "--help" => {
-                    println!("{USAGE}");
-                    return Ok(());
-                }
-                _ => {
-                    return Err(format!("flag {arg} not found.\n{USAGE}").into());
+    let mut manifest_path = "Manifest.toml".to_string();
+    let mut arg = args
+        .next()
+        .ok_or(format!("Subcommand not found.\n{USAGE}"))?;
+    if arg.starts_with('-') {
+        match arg.as_str() {
+            "-m" | "--manifest" => {
+                let path = args.next();
+                if let Some(path) = path {
+                    manifest_path = path;
+                } else {
+                    return Err(format!("Please provide path to manifest file.\n{USAGE}").into());
                 }
             }
-        } else {
-            if manifest_path.is_empty() {
-                manifest_path.push_str("Manifest.toml");
+            "-h" | "--help" => {
+                println!("{USAGE}");
+                return Ok(());
             }
-            let manifest = Manifest::try_from(Path::new(&manifest_path))?;
+            _ => {
+                return Err(format!("flag {arg} not found.\n{USAGE}").into());
+            }
+        }
+        arg = args
+            .next()
+            .ok_or(format!("Subcommand not found.\n{USAGE}"))?;
+    }
+    let manifest = Manifest::try_from(Path::new(&manifest_path))?;
+    let mut force = false;
+    let mut name: Option<String> = None;
+    match arg.as_str() {
+        "sync" => {
+            if let Some(arg) = args.next() {
+                if arg.starts_with('-') {
+                    match arg.as_str() {
+                        "-f" | "--force" => {
+                            force = true;
+                        }
+                        "-h" | "--help" => {
+                            println!("{USAGE}");
+                            return Ok(());
+                        }
+                        _ => {
+                            return Err(format!("flag {arg} not found.\n{USAGE}").into());
+                        }
+                    }
+                    name = args.next();
+                } else {
+                    name = Some(arg);
+                }
+            }
             create_color_palette(&manifest.wallpaper, config, &manifest)?;
-            match arg.as_str() {
-                "sync" => {
-                    let mut force = false;
-                    let mut name: Option<String> = None;
-                    if let Some(arg) = args.next() {
-                        if arg.starts_with('-') {
-                            match arg.as_str() {
-                                "-f" | "--force" => {
-                                    force = true;
-                                    name = args.next();
-                                }
-                                "-h" | "--help" => {
-                                    println!("{USAGE}");
-                                    return Ok(());
-                                }
-                                _ => {
-                                    return Err(format!("flag {arg} not found.\n{USAGE}").into());
-                                }
-                            }
-                        } else {
-                            name = Some(arg);
-                        }
+            if let Some(name) = name {
+                if let Some(file) = manifest.files.get(&name) {
+                    symlink_files(file, force)?;
+                    if file.template.is_some() {
+                        generate_template(file, config)?;
                     }
-                    if let Some(name) = name {
-                        if let Some(file) = manifest.files.get(&name) {
-                            symlink_files(file, force)?;
-                            if file.template.is_some() {
-                                generate_template(file, config)?;
-                            }
-                        } else {
-                            return Err(format!("could not find {}", &name).into());
-                        }
-                    } else {
-                        for (_, file) in manifest.files.iter() {
-                            symlink_files(file, force)?;
-                            if file.template.is_some() {
-                                generate_template(file, config)?;
-                            }
-                        }
-                    }
+                } else {
+                    return Err(format!("could not find {}", &name).into());
                 }
-                "link" => {
-                    let mut force = false;
-                    let mut name: Option<String> = None;
-                    if let Some(arg) = args.next() {
-                        if arg.starts_with('-') {
-                            match arg.as_str() {
-                                "-f" | "--force" => {
-                                    force = true;
-                                    name = args.next();
-                                }
-                                "-h" | "--help" => {
-                                    println!("{USAGE}");
-                                    return Ok(());
-                                }
-                                _ => {
-                                    return Err(format!("flag {arg} not found.\n{USAGE}").into());
-                                }
-                            }
-                        } else {
-                            name = Some(arg);
-                        }
+            } else {
+                for (_, file) in manifest.files.iter() {
+                    symlink_files(file, force)?;
+                    if file.template.is_some() {
+                        generate_template(file, config)?;
                     }
-                    if let Some(name) = name {
-                        if let Some(file) = manifest.files.get(&name) {
-                            symlink_files(file, force)?;
-                        } else {
-                            return Err(format!("could not find {}", &name).into());
-                        }
-                    } else {
-                        for (_, file) in manifest.files.iter() {
-                            symlink_files(file, force)?;
-                        }
-                    }
-                }
-                "generate" => {
-                    let mut name: Option<String> = None;
-                    if let Some(arg) = args.next() {
-                        if arg.starts_with('-') {
-                            match arg.as_str() {
-                                "-h" | "--help" => {
-                                    println!("{USAGE}");
-                                    return Ok(());
-                                }
-                                _ => {
-                                    return Err(format!("flag {arg} not found.\n{USAGE}").into());
-                                }
-                            }
-                        } else {
-                            name = Some(arg);
-                        }
-                    }
-                    if let Some(name) = name {
-                        if let Some(file) = manifest.files.get(&name) {
-                            if file.template.is_some() {
-                                generate_template(file, config)?;
-                            }
-                        } else {
-                            return Err(format!("could not find {}", &name).into());
-                        }
-                    } else {
-                        for (_, file) in manifest.files.iter() {
-                            if file.template.is_some() {
-                                generate_template(file, config)?;
-                            }
-                        }
-                    }
-                }
-                _ => {
-                    return Err(format!("subcommand {arg} not found.\n{USAGE}").into());
                 }
             }
+        }
+        "link" => {
+            if let Some(arg) = args.next() {
+                if arg.starts_with('-') {
+                    match arg.as_str() {
+                        "-f" | "--force" => {
+                            force = true;
+                        }
+                        "-h" | "--help" => {
+                            println!("{USAGE}");
+                            return Ok(());
+                        }
+                        _ => {
+                            return Err(format!("flag {arg} not found.\n{USAGE}").into());
+                        }
+                    }
+                    name = args.next();
+                } else {
+                    name = Some(arg);
+                }
+            }
+            if let Some(name) = name {
+                if let Some(file) = manifest.files.get(&name) {
+                    symlink_files(file, force)?;
+                } else {
+                    return Err(format!("could not find {}", &name).into());
+                }
+            } else {
+                for (_, file) in manifest.files.iter() {
+                    symlink_files(file, force)?;
+                }
+            }
+        }
+        "generate" => {
+            if let Some(arg) = args.next() {
+                if arg.starts_with('-') {
+                    match arg.as_str() {
+                        "-h" | "--help" => {
+                            println!("{USAGE}");
+                            return Ok(());
+                        }
+                        _ => {
+                            return Err(format!("flag {arg} not found.\n{USAGE}").into());
+                        }
+                    }
+                } else {
+                    name = Some(arg);
+                }
+            }
+            create_color_palette(&manifest.wallpaper, config, &manifest)?;
+            if let Some(name) = name {
+                if let Some(file) = manifest.files.get(&name) {
+                    if file.template.is_some() {
+                        generate_template(file, config)?;
+                    }
+                } else {
+                    return Err(format!("could not find {}", &name).into());
+                }
+            } else {
+                for (_, file) in manifest.files.iter() {
+                    if file.template.is_some() {
+                        generate_template(file, config)?;
+                    }
+                }
+            }
+        }
+        _ => {
+            return Err(format!("subcommand {arg} not found.\n{USAGE}").into());
         }
     }
     Ok(())
