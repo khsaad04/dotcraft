@@ -14,14 +14,14 @@ use std::{
 
 #[derive(Debug, Deserialize)]
 struct File {
-    target: String,
-    dest: String,
-    template: Option<String>,
+    target: PathBuf,
+    dest: PathBuf,
+    template: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
 struct Manifest {
-    wallpaper: Option<String>,
+    wallpaper: Option<PathBuf>,
     theme: Option<String>,
     files: IndexMap<String, File>,
 }
@@ -242,14 +242,14 @@ fn parse_arguments(args: &mut Args, config: &mut VarMap) -> error::Result<()> {
 }
 
 fn create_color_palette(
-    path: &Option<String>,
+    path: &Option<PathBuf>,
     config: &mut VarMap,
     manifest: &Manifest,
 ) -> error::Result<()> {
     if let Some(wallpaper) = path {
         let wp_path = PathBuf::from(&wallpaper)
             .canonicalize()
-            .map_err(|err| format!("could not find {wallpaper}: {err}"))?;
+            .map_err(|err| format!("could not find {}: {}", wallpaper.display(), err))?;
         config.insert("wallpaper".to_string(), wp_path.display().to_string());
         let theme = manifest.theme.clone().unwrap_or("dark".to_string());
         colors::generate_material_colors(&wp_path, &theme, config)?;
@@ -271,8 +271,8 @@ fn has_templates(manifest: &Manifest) -> bool {
 }
 
 fn symlink_files(file: &File, force: bool) -> error::Result<()> {
-    let target_path = PathBuf::from(resolve_home_dir(&file.target)?).canonicalize()?;
-    let dest_path = PathBuf::from(resolve_home_dir(&file.dest)?);
+    let target_path = resolve_home_dir(&file.target)?.canonicalize()?;
+    let dest_path = resolve_home_dir(&file.dest)?;
     if dest_path.is_dir() {
         symlink_dir_all(
             &target_path,
@@ -285,12 +285,18 @@ fn symlink_files(file: &File, force: bool) -> error::Result<()> {
     Ok(())
 }
 
-fn resolve_home_dir(path: &str) -> error::Result<String> {
+fn resolve_home_dir(path: &Path) -> error::Result<PathBuf> {
     let mut result = String::new();
     let home_dir =
         std::env::var("HOME").map_err(|err| format!("could not find home directory: {err}"))?;
-    result.push_str(&path.replace('~', &home_dir).replace("$HOME", &home_dir));
-    Ok(result)
+    result.push_str(
+        &path
+            .to_str()
+            .unwrap()
+            .replace('~', &home_dir)
+            .replace("$HOME", &home_dir),
+    );
+    Ok(PathBuf::from(result))
 }
 
 fn symlink_dir_all(target: &Path, dest: &Path, force: bool) -> error::Result<()> {
