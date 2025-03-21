@@ -31,27 +31,20 @@ impl TryFrom<&Path> for Manifest {
     fn try_from(value: &Path) -> std::result::Result<Self, Self::Error> {
         let manifest_path = value
             .canonicalize()
-            .map_err(|err| format!("could not find {path}: {err}", path = &value.display()))?;
+            .map_err(|err| format!("could not find {}: {}", &value.display(), err))?;
         let manifest_parent_dir = manifest_path.parent().unwrap();
         std::env::set_current_dir(manifest_parent_dir).map_err(|err| {
             format!(
-                "could not change directory to {path}: {err}",
-                path = &manifest_parent_dir.display()
+                "could not change directory to {}: {}",
+                &manifest_parent_dir.display(),
+                err
             )
         })?;
         let manifest: Manifest =
             toml::from_str(&fs::read_to_string(&manifest_path).map_err(|err| {
-                format!(
-                    "could not read file {path}: {err}",
-                    path = &manifest_path.display()
-                )
+                format!("could not read file {}: {}", &manifest_path.display(), err)
             })?)
-            .map_err(|err| {
-                format!(
-                    "could not parse toml {path}: {err}",
-                    path = &manifest_path.display()
-                )
-            })?;
+            .map_err(|err| format!("could not parse toml {}: {}", &manifest_path.display(), err))?;
         Ok(manifest)
     }
 }
@@ -308,8 +301,9 @@ fn symlink_dir_all(target: &Path, dest: &Path, force: bool) -> error::Result<()>
             if !dest_parent_dir.exists() {
                 fs::create_dir_all(dest_parent_dir).map_err(|err| {
                     format!(
-                        "could not create dir {path}: {err}",
-                        path = &dest_parent_dir.display()
+                        "could not create dir {}: {}",
+                        &dest_parent_dir.display(),
+                        err
                     )
                 })?;
             }
@@ -335,10 +329,7 @@ fn symlink_file(target: &Path, dest: &Path, force: bool) -> error::Result<()> {
                         dest.display()
                     );
                     std::fs::remove_file(dest).map_err(|err| {
-                        format!(
-                            "could not remove file {path}: {err}",
-                            path = &dest.display()
-                        )
+                        format!("could not remove file {}: {}", &dest.display(), err)
                     })?;
                     symlink(target, dest)?;
                     log!(Info, "Symlinked {} to {}", target.display(), dest.display());
@@ -346,10 +337,7 @@ fn symlink_file(target: &Path, dest: &Path, force: bool) -> error::Result<()> {
                     if !dest.exists() {
                         log!(Warning, "Destination is a broken symlink. Ignoring",);
                         std::fs::remove_file(dest).map_err(|err| {
-                            format!(
-                                "could not remove file {path}: {err}",
-                                path = &dest.display()
-                            )
+                            format!("could not remove file {}: {}", &dest.display(), err)
                         })?;
                         symlink(target, dest)?;
                         log!(Info, "Symlinked {} to {}", target.display(), dest.display());
@@ -376,9 +364,10 @@ fn symlink_file(target: &Path, dest: &Path, force: bool) -> error::Result<()> {
             }
             _ => {
                 return Err(format!(
-                    "could not symlink {target_path} to {dest_path}: {err}",
-                    target_path = &target.display(),
-                    dest_path = &dest.display(),
+                    "could not symlink {} to {}: {}",
+                    &target.display(),
+                    &dest.display(),
+                    err
                 )
                 .into());
             }
@@ -390,18 +379,16 @@ fn symlink_file(target: &Path, dest: &Path, force: bool) -> error::Result<()> {
 fn generate_template(file: &File, config: &VarMap) -> error::Result<()> {
     let target_path = PathBuf::from(&file.target).canonicalize().map_err(|err| {
         format!(
-            "cannot generate template into {path}: {err}",
-            path = &file.target
+            "cannot generate template into {}: {}",
+            &file.target.display(),
+            err
         )
     })?;
     if let Some(template_path) = &file.template {
         let template_path = PathBuf::from(template_path);
         if template_path.exists() {
             let data = fs::read_to_string(&template_path).map_err(|err| {
-                format!(
-                    "could not read file {path}: {err}",
-                    path = &template_path.display()
-                )
+                format!("could not read file {}: {}", &template_path.display(), err)
             })?;
 
             let mut engine = upon::Engine::new();
@@ -409,8 +396,9 @@ fn generate_template(file: &File, config: &VarMap) -> error::Result<()> {
                 .add_template(template_path.to_str().unwrap(), &data)
                 .map_err(|err| {
                     format!(
-                        "could not add template {path}: {err}",
-                        path = &template_path.display()
+                        "could not add template {}: {}",
+                        &template_path.display(),
+                        err
                     )
                 })?;
             let rendered = engine
@@ -419,24 +407,22 @@ fn generate_template(file: &File, config: &VarMap) -> error::Result<()> {
                 .to_string()
                 .map_err(|err| {
                     format!(
-                        "could not render template {path}: {err}",
-                        path = &template_path.display()
+                        "could not render template {}: {}",
+                        &template_path.display(),
+                        err
                     )
                 })?;
 
             fs::write(&target_path, rendered).map_err(|err| {
                 format!(
-                    "could not write to file {path}: {err}",
-                    path = &target_path.display()
+                    "could not write to file {}: {}",
+                    &target_path.display(),
+                    err
                 )
             })?;
             log!(Info, "Generated template {}", template_path.display());
         } else {
-            return Err(format!(
-                "could not find template {path}",
-                path = &template_path.display()
-            )
-            .into());
+            return Err(format!("could not find template {}", &template_path.display()).into());
         }
     }
     Ok(())
