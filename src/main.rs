@@ -92,14 +92,14 @@ fn main() {
     let mut args = std::env::args();
     let _program_name = args.next();
 
-    let mut config: VarMap = HashMap::new();
-    if let Err(err) = parse_arguments(&mut args, &mut config) {
+    if let Err(err) = parse_arguments(&mut args) {
         eprintln!("{err}");
         exit(1);
     }
 }
 
-fn parse_arguments(args: &mut Args, config: &mut VarMap) -> error::Result<()> {
+fn parse_arguments(args: &mut Args) -> error::Result<()> {
+    let mut config: VarMap = HashMap::new();
     let mut manifest_path = "Manifest.toml".to_string();
     let mut arg = args
         .next()
@@ -150,12 +150,12 @@ fn parse_arguments(args: &mut Args, config: &mut VarMap) -> error::Result<()> {
                     name = Some(arg);
                 }
             }
-            create_color_palette(&manifest.wallpaper, config, &manifest)?;
+            create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
             if let Some(name) = name {
                 if let Some(file) = manifest.files.get(&name) {
                     symlink_files(file, force)?;
                     if file.template.is_some() {
-                        generate_template(file, config)?;
+                        generate_template(file, &config)?;
                     }
                 } else {
                     return Err(format!("could not find {}", &name).into());
@@ -164,7 +164,7 @@ fn parse_arguments(args: &mut Args, config: &mut VarMap) -> error::Result<()> {
                 for (_, file) in manifest.files.iter() {
                     symlink_files(file, force)?;
                     if file.template.is_some() {
-                        generate_template(file, config)?;
+                        generate_template(file, &config)?;
                     }
                 }
             }
@@ -217,11 +217,11 @@ fn parse_arguments(args: &mut Args, config: &mut VarMap) -> error::Result<()> {
                     name = Some(arg);
                 }
             }
-            create_color_palette(&manifest.wallpaper, config, &manifest)?;
+            create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
             if let Some(name) = name {
                 if let Some(file) = manifest.files.get(&name) {
                     if file.template.is_some() {
-                        generate_template(file, config)?;
+                        generate_template(file, &config)?;
                     }
                 } else {
                     return Err(format!("could not find {}", &name).into());
@@ -229,7 +229,7 @@ fn parse_arguments(args: &mut Args, config: &mut VarMap) -> error::Result<()> {
             } else {
                 for (_, file) in manifest.files.iter() {
                     if file.template.is_some() {
-                        generate_template(file, config)?;
+                        generate_template(file, &config)?;
                     }
                 }
             }
