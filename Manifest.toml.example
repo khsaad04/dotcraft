@@ -1,5 +1,5 @@
-wallpaper = "wp.jpg" # Required for templates
-dark = true # Optional. Whether to use dark theme
+wallpaper = "/path/to/wp.jpg" # Required for templates
+theme = "dark" # Optional. Whether to use dark or light theme
 
 [files]
 test = {target = "test", dest = "~/dest/", template = "temp"}
