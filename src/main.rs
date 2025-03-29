@@ -29,22 +29,22 @@ struct Manifest {
 impl TryFrom<&Path> for Manifest {
     type Error = error::Error;
     fn try_from(value: &Path) -> std::result::Result<Self, Self::Error> {
-        let manifest_path = value
+        let path = value
             .canonicalize()
             .map_err(|err| format!("could not find {}: {}", &value.display(), err))?;
-        let manifest_parent_dir = manifest_path.parent().unwrap();
-        std::env::set_current_dir(manifest_parent_dir).map_err(|err| {
+        let parent_dir = path.parent().unwrap();
+        std::env::set_current_dir(parent_dir).map_err(|err| {
             format!(
                 "could not change directory to {}: {}",
-                &manifest_parent_dir.display(),
+                &parent_dir.display(),
                 err
             )
         })?;
-        let manifest: Manifest =
-            toml::from_str(&fs::read_to_string(&manifest_path).map_err(|err| {
-                format!("could not read file {}: {}", &manifest_path.display(), err)
-            })?)
-            .map_err(|err| format!("could not parse toml {}: {}", &manifest_path.display(), err))?;
+        let manifest: Manifest = toml::from_str(
+            &fs::read_to_string(&path)
+                .map_err(|err| format!("could not read file {}: {}", &path.display(), err))?,
+        )
+        .map_err(|err| format!("could not parse toml {}: {}", &path.display(), err))?;
         Ok(manifest)
     }
 }
@@ -240,12 +240,15 @@ fn create_color_palette(
     manifest: &Manifest,
 ) -> error::Result<()> {
     if let Some(wallpaper) = path {
-        let wp_path = PathBuf::from(&wallpaper)
+        let wp_path = wallpaper
             .canonicalize()
             .map_err(|err| format!("could not find {}: {}", wallpaper.display(), err))?;
         config.insert("wallpaper".to_string(), wp_path.display().to_string());
-        let theme = manifest.theme.clone().unwrap_or("dark".to_string());
-        colors::generate_material_colors(&wp_path, &theme, config)?;
+        let mut theme = "dark";
+        if let Some(theme_pref) = &manifest.theme {
+            theme = theme_pref;
+        }
+        colors::generate_material_colors(&wp_path, theme, config)?;
     } else if has_templates(manifest) {
         return Err("could not generate color palette: `wallpaper` is not set.".into());
     } else {
