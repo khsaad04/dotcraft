@@ -120,6 +120,7 @@ fn parse_arguments(args: &mut Args) -> error::Result<()> {
             .ok_or(format!("Subcommand not found.\n{USAGE}"))?;
     }
     let manifest = Manifest::try_from(Path::new(&manifest_path))?;
+    let mut template_engine = upon::Engine::new();
     let mut force = false;
     let mut name: Option<String> = None;
     match arg.as_str() {
@@ -148,7 +149,7 @@ fn parse_arguments(args: &mut Args) -> error::Result<()> {
                 if let Some(file) = manifest.files.get(&name) {
                     symlink_files(file, force)?;
                     if file.template.is_some() {
-                        generate_template(file, &config)?;
+                        generate_template(file, &config, &mut template_engine)?;
                     }
                 } else {
                     return Err(format!("could not find {}", &name).into());
@@ -157,7 +158,7 @@ fn parse_arguments(args: &mut Args) -> error::Result<()> {
                 for (_, file) in manifest.files.iter() {
                     symlink_files(file, force)?;
                     if file.template.is_some() {
-                        generate_template(file, &config)?;
+                        generate_template(file, &config, &mut template_engine)?;
                     }
                 }
             }
@@ -214,7 +215,7 @@ fn parse_arguments(args: &mut Args) -> error::Result<()> {
             if let Some(name) = name {
                 if let Some(file) = manifest.files.get(&name) {
                     if file.template.is_some() {
-                        generate_template(file, &config)?;
+                        generate_template(file, &config, &mut template_engine)?;
                     }
                 } else {
                     return Err(format!("could not find {}", &name).into());
@@ -222,7 +223,7 @@ fn parse_arguments(args: &mut Args) -> error::Result<()> {
             } else {
                 for (_, file) in manifest.files.iter() {
                     if file.template.is_some() {
-                        generate_template(file, &config)?;
+                        generate_template(file, &config, &mut template_engine)?;
                     }
                 }
             }
@@ -379,54 +380,40 @@ fn symlink_file(target: &Path, dest: &Path, force: bool) -> error::Result<()> {
     Ok(())
 }
 
-fn generate_template(file: &File, config: &VarMap) -> error::Result<()> {
-    let target_path = PathBuf::from(&file.target).canonicalize().map_err(|err| {
-        format!(
-            "cannot generate template into {}: {}",
-            &file.target.display(),
-            err
-        )
-    })?;
+fn generate_template(
+    file: &File,
+    config: &VarMap,
+    template_engine: &mut upon::Engine,
+) -> error::Result<()> {
     if let Some(template_path) = &file.template {
-        let template_path = PathBuf::from(template_path);
-        if template_path.exists() {
-            let data = fs::read_to_string(&template_path).map_err(|err| {
-                format!("could not read file {}: {}", &template_path.display(), err)
-            })?;
+        let template_path = template_path
+            .canonicalize()
+            .map_err(|err| format!("could not find {}: {}", template_path.display(), err))?;
+        let data = fs::read_to_string(&template_path)
+            .map_err(|err| format!("could not read file {}: {}", &template_path.display(), err))?;
 
-            let mut engine = upon::Engine::new();
-            engine
-                .add_template(template_path.to_str().unwrap(), &data)
-                .map_err(|err| {
-                    format!(
-                        "could not add template {}: {}",
-                        &template_path.display(),
-                        err
-                    )
-                })?;
-            let rendered = engine
-                .template(template_path.to_str().unwrap())
-                .render(config)
-                .to_string()
-                .map_err(|err| {
-                    format!(
-                        "could not render template {}: {}",
-                        &template_path.display(),
-                        err
-                    )
-                })?;
-
-            fs::write(&target_path, rendered).map_err(|err| {
+        let rendered = template_engine
+            .compile(&data)
+            .map_err(|err| {
                 format!(
-                    "could not write to file {}: {}",
-                    &target_path.display(),
+                    "could not compile template {}: {}",
+                    &template_path.display(),
+                    err
+                )
+            })?
+            .render(template_engine, config)
+            .to_string()
+            .map_err(|err| {
+                format!(
+                    "could not render template {}: {}",
+                    &template_path.display(),
                     err
                 )
             })?;
-            log!(Info, "Generated template {}", template_path.display());
-        } else {
-            return Err(format!("could not find template {}", &template_path.display()).into());
-        }
+
+        fs::write(&file.target, rendered)
+            .map_err(|err| format!("could not write to {}: {}", &file.target.display(), err))?;
+        log!(Info, "Generated template {}", template_path.display());
     }
     Ok(())
 }
