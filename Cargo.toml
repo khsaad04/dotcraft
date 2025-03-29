@@ -6,6 +6,6 @@ edition = "2021"
 [dependencies]
 indexmap = { version = "2.8.0", features = ["serde"] }
 material-colors = { version = "0.4.2", features = ["image"] }
-serde = { version = "1.0.213", features = ["derive"] }
-toml = "0.8.19"
-upon = "0.8.1"
+serde = { version = "1.0.219", features = ["derive"] }
+toml = "0.8.20"
+upon = "0.9.0"
