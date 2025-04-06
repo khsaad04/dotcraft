@@ -31,8 +31,11 @@ impl TryFrom<&Path> for Manifest {
     fn try_from(value: &Path) -> std::result::Result<Self, Self::Error> {
         let path = value
             .canonicalize()
-            .map_err(|err| format!("could not find {}: {}", &value.display(), err))?;
-        let parent_dir = path.parent().unwrap();
+            .map_err(|err| format!("invalid path {}: {}", &value.display(), err))?;
+        let parent_dir = path.parent().ok_or(format!(
+            "could not access parent dir of {}",
+            &path.display()
+        ))?;
         std::env::set_current_dir(parent_dir).map_err(|err| {
             format!(
                 "could not change directory to {}: {}",
@@ -92,7 +95,6 @@ fn main() {
 }
 
 fn parse_arguments(args: &mut Args) -> error::Result<()> {
-    let mut config: VarMap = HashMap::new();
     let mut manifest_path = "Manifest.toml".to_string();
     let mut arg = args
         .next()
@@ -119,9 +121,13 @@ fn parse_arguments(args: &mut Args) -> error::Result<()> {
             .next()
             .ok_or(format!("Subcommand not found.\n{USAGE}"))?;
     }
+
+    let mut config: VarMap = HashMap::new();
     let manifest = Manifest::try_from(Path::new(&manifest_path))?;
+
     let mut template_engine = upon::Engine::new();
     template_engine.add_filter("is_equal", |s: &str, other: &str| -> bool { s == other });
+
     let mut force = false;
     let mut name: Option<String> = None;
     match arg.as_str() {
@@ -274,7 +280,11 @@ fn symlink_files(file: &File, force: bool) -> error::Result<()> {
     if dest_path.is_dir() {
         symlink_dir_all(
             &target_path,
-            &dest_path.join(target_path.file_name().unwrap()),
+            &dest_path.join(
+                target_path
+                    .file_name()
+                    .ok_or(format!("file name not found of {:?}", target_path))?,
+            ),
             force,
         )?;
     } else {
@@ -301,8 +311,16 @@ fn symlink_dir_all(target: &Path, dest: &Path, force: bool) -> error::Result<()>
     if target.is_dir() {
         for entry in fs::read_dir(target)? {
             let entry = entry?;
-            let dest = &dest.join(entry.path().file_name().unwrap());
-            let dest_parent_dir = dest.parent().unwrap();
+            let dest = &dest.join(
+                entry
+                    .path()
+                    .file_name()
+                    .ok_or(format!("file name not found of {:?}", entry))?,
+            );
+            let dest_parent_dir = dest.parent().ok_or(format!(
+                "could not access parent dir of {}",
+                &dest.display()
+            ))?;
             if !dest_parent_dir.exists() {
                 fs::create_dir_all(dest_parent_dir).map_err(|err| {
                     format!(
