@@ -121,6 +121,7 @@ fn parse_arguments(args: &mut Args) -> error::Result<()> {
     }
     let manifest = Manifest::try_from(Path::new(&manifest_path))?;
     let mut template_engine = upon::Engine::new();
+    template_engine.add_filter("is_equal", |s: &str, other: &str| -> bool { s == other });
     let mut force = false;
     let mut name: Option<String> = None;
     match arg.as_str() {
