@@ -1,3 +1,4 @@
+mod cli;
 mod colors;
 mod error;
 
@@ -5,12 +6,18 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use std::{
     collections::HashMap,
-    env::Args,
     fs, io,
     os::unix::fs::symlink,
     path::{Path, PathBuf},
     process::exit,
 };
+
+#[derive(Debug, Deserialize)]
+struct Manifest {
+    wallpaper: Option<PathBuf>,
+    theme: Option<String>,
+    files: IndexMap<String, File>,
+}
 
 #[derive(Debug, Deserialize)]
 struct File {
@@ -19,12 +26,7 @@ struct File {
     template: Option<PathBuf>,
 }
 
-#[derive(Debug, Deserialize)]
-struct Manifest {
-    wallpaper: Option<PathBuf>,
-    theme: Option<String>,
-    files: IndexMap<String, File>,
-}
+type VarMap = HashMap<String, String>;
 
 impl TryFrom<&Path> for Manifest {
     type Error = error::Error;
@@ -52,19 +54,6 @@ impl TryFrom<&Path> for Manifest {
     }
 }
 
-type VarMap = HashMap<String, String>;
-
-const USAGE: &str = "Usage: dotman [OPTION] <SUBCOMMAND>
-
-Options:
-  -m, --manifest <PATH>  custom path to manifest file [default: Manifest.toml]
-  -h, --help             show this help message
-
-Subcommands:
-  sync      [-f | --force] [NAME] symlink files and generate templates 
-  link      [-f | --force] [NAME] symlink files
-  generate  [NAME] generate templates";
-
 enum LogLevel {
     Info,
     Warning,
@@ -85,83 +74,35 @@ macro_rules! log {
 }
 
 fn main() {
-    let mut args = std::env::args();
-    let _program_name = args.next();
-
-    if let Err(err) = parse_arguments(&mut args) {
+    if let Err(err) = exec_subcommand() {
         eprintln!("{err}");
         exit(1);
     }
 }
 
-fn parse_arguments(args: &mut Args) -> error::Result<()> {
-    let mut manifest_path = "Manifest.toml".to_string();
-    let mut arg = args
-        .next()
-        .ok_or(format!("Subcommand not found.\n{USAGE}"))?;
-    if arg.starts_with('-') {
-        match arg.as_str() {
-            "-m" | "--manifest" => {
-                let path = args.next();
-                if let Some(path) = path {
-                    manifest_path = path;
-                } else {
-                    return Err(format!("Please provide path to manifest file.\n{USAGE}").into());
-                }
-            }
-            "-h" | "--help" => {
-                println!("{USAGE}");
-                return Ok(());
-            }
-            _ => {
-                return Err(format!("flag {arg} not found.\n{USAGE}").into());
-            }
-        }
-        arg = args
-            .next()
-            .ok_or(format!("Subcommand not found.\n{USAGE}"))?;
-    }
+fn exec_subcommand() -> error::Result<()> {
+    let args = cli::Cli::try_parse()?;
 
     let mut config: VarMap = HashMap::new();
-    let manifest = Manifest::try_from(Path::new(&manifest_path))?;
+    let manifest = Manifest::try_from(args.manifest_path.as_path())?;
 
     let mut template_engine = upon::Engine::new();
     template_engine.add_filter("is_equal", |s: &str, other: &str| -> bool { s == other });
 
-    let mut force = false;
-    let mut name: Option<String> = None;
-    match arg.as_str() {
-        "sync" => {
-            if let Some(arg) = args.next() {
-                if arg.starts_with('-') {
-                    match arg.as_str() {
-                        "-f" | "--force" => {
-                            force = true;
-                        }
-                        "-h" | "--help" => {
-                            println!("{USAGE}");
-                            return Ok(());
-                        }
-                        _ => {
-                            return Err(format!("flag {arg} not found.\n{USAGE}").into());
-                        }
-                    }
-                    name = args.next();
-                } else {
-                    name = Some(arg);
-                }
-            }
-            create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
+    match args.subcommand {
+        cli::SubCommand::Sync { force, name } => {
             if let Some(name) = name {
                 if let Some(file) = manifest.files.get(&name) {
                     symlink_files(file, force)?;
                     if file.template.is_some() {
+                        create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
                         generate_template(file, &config, &mut template_engine)?;
                     }
                 } else {
                     return Err(format!("could not find {}", &name).into());
                 }
             } else {
+                create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
                 for (_, file) in manifest.files.iter() {
                     symlink_files(file, force)?;
                     if file.template.is_some() {
@@ -170,26 +111,7 @@ fn parse_arguments(args: &mut Args) -> error::Result<()> {
                 }
             }
         }
-        "link" => {
-            if let Some(arg) = args.next() {
-                if arg.starts_with('-') {
-                    match arg.as_str() {
-                        "-f" | "--force" => {
-                            force = true;
-                        }
-                        "-h" | "--help" => {
-                            println!("{USAGE}");
-                            return Ok(());
-                        }
-                        _ => {
-                            return Err(format!("flag {arg} not found.\n{USAGE}").into());
-                        }
-                    }
-                    name = args.next();
-                } else {
-                    name = Some(arg);
-                }
-            }
+        cli::SubCommand::Link { force, name } => {
             if let Some(name) = name {
                 if let Some(file) = manifest.files.get(&name) {
                     symlink_files(file, force)?;
@@ -202,41 +124,24 @@ fn parse_arguments(args: &mut Args) -> error::Result<()> {
                 }
             }
         }
-        "generate" => {
-            if let Some(arg) = args.next() {
-                if arg.starts_with('-') {
-                    match arg.as_str() {
-                        "-h" | "--help" => {
-                            println!("{USAGE}");
-                            return Ok(());
-                        }
-                        _ => {
-                            return Err(format!("flag {arg} not found.\n{USAGE}").into());
-                        }
-                    }
-                } else {
-                    name = Some(arg);
-                }
-            }
-            create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
+        cli::SubCommand::Generate { name } => {
             if let Some(name) = name {
                 if let Some(file) = manifest.files.get(&name) {
                     if file.template.is_some() {
+                        create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
                         generate_template(file, &config, &mut template_engine)?;
                     }
                 } else {
                     return Err(format!("could not find {}", &name).into());
                 }
             } else {
+                create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
                 for (_, file) in manifest.files.iter() {
                     if file.template.is_some() {
                         generate_template(file, &config, &mut template_engine)?;
                     }
                 }
             }
-        }
-        _ => {
-            return Err(format!("subcommand {arg} not found.\n{USAGE}").into());
         }
     }
     Ok(())
