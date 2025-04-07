@@ -9,12 +9,8 @@ use material_colors::{
 use std::{collections::HashMap, path::Path};
 
 pub fn generate_material_colors(wp_path: &Path, theme: &str, config: &mut VarMap) -> Result<()> {
-    let mut image = ImageReader::open(wp_path).map_err(|err| {
-        format!(
-            "could not read image {path}: {err}",
-            path = &wp_path.display()
-        )
-    })?;
+    let mut image = ImageReader::open(wp_path)
+        .map_err(|err| format!("could not read image {}: {err}", wp_path.display()))?;
     image.resize(128, 128, FilterType::Lanczos3);
     let color_palette = ThemeBuilder::with_source(ImageReader::extract_color(&image)).build();
 

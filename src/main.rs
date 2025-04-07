@@ -33,23 +33,21 @@ impl TryFrom<&Path> for Manifest {
     fn try_from(value: &Path) -> std::result::Result<Self, Self::Error> {
         let path = value
             .canonicalize()
-            .map_err(|err| format!("invalid path {}: {}", &value.display(), err))?;
-        let parent_dir = path.parent().ok_or(format!(
-            "could not access parent dir of {}",
-            &path.display()
-        ))?;
+            .map_err(|err| format!("invalid path {}: {err}", value.display()))?;
+        let parent_dir = path
+            .parent()
+            .ok_or(format!("could not access parent dir of {}", path.display()))?;
         std::env::set_current_dir(parent_dir).map_err(|err| {
             format!(
-                "could not change directory to {}: {}",
-                &parent_dir.display(),
-                err
+                "could not change directory to {}: {err}",
+                parent_dir.display()
             )
         })?;
         let manifest: Manifest = toml::from_str(
             &fs::read_to_string(&path)
-                .map_err(|err| format!("could not read file {}: {}", &path.display(), err))?,
+                .map_err(|err| format!("could not read file {}: {err}", path.display()))?,
         )
-        .map_err(|err| format!("could not parse toml {}: {}", &path.display(), err))?;
+        .map_err(|err| format!("could not parse toml {}: {err}", path.display()))?;
         Ok(manifest)
     }
 }
@@ -75,7 +73,7 @@ macro_rules! log {
 
 fn main() {
     if let Err(err) = exec_subcommand() {
-        eprintln!("{err}");
+        eprintln!("\x1b[0;31mERROR\x1b[0m: {err}");
         exit(1);
     }
 }
@@ -93,20 +91,28 @@ fn exec_subcommand() -> error::Result<()> {
         cli::SubCommand::Sync { force, name } => {
             if let Some(name) = name {
                 if let Some(file) = manifest.files.get(&name) {
-                    symlink_files(file, force)?;
+                    symlink_files(file, force).map_err(|err| {
+                        format!("something went wrong while symlinking {name}:\n    {err}")
+                    })?;
                     if file.template.is_some() {
                         create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
-                        generate_template(file, &config, &mut template_engine)?;
+                        generate_template(file, &config, &mut template_engine).map_err(|err| {
+                            format!("something went wrong while generating {name}:\n    {err}")
+                        })?;
                     }
                 } else {
-                    return Err(format!("could not find {}", &name).into());
+                    return Err(format!("could not find {name}").into());
                 }
             } else {
                 create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
-                for (_, file) in manifest.files.iter() {
-                    symlink_files(file, force)?;
+                for (name, file) in manifest.files.iter() {
+                    symlink_files(file, force).map_err(|err| {
+                        format!("something went wrong while symlinking {name}:\n    {err}")
+                    })?;
                     if file.template.is_some() {
-                        generate_template(file, &config, &mut template_engine)?;
+                        generate_template(file, &config, &mut template_engine).map_err(|err| {
+                            format!("something went wrong while generating {name}:\n    {err}")
+                        })?;
                     }
                 }
             }
@@ -114,13 +120,17 @@ fn exec_subcommand() -> error::Result<()> {
         cli::SubCommand::Link { force, name } => {
             if let Some(name) = name {
                 if let Some(file) = manifest.files.get(&name) {
-                    symlink_files(file, force)?;
+                    symlink_files(file, force).map_err(|err| {
+                        format!("something went wrong while symlinking {name}:\n    {err}")
+                    })?;
                 } else {
                     return Err(format!("could not find {}", &name).into());
                 }
             } else {
-                for (_, file) in manifest.files.iter() {
-                    symlink_files(file, force)?;
+                for (name, file) in manifest.files.iter() {
+                    symlink_files(file, force).map_err(|err| {
+                        format!("something went wrong while symlinking {name}:\n    {err}")
+                    })?;
                 }
             }
         }
@@ -129,16 +139,20 @@ fn exec_subcommand() -> error::Result<()> {
                 if let Some(file) = manifest.files.get(&name) {
                     if file.template.is_some() {
                         create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
-                        generate_template(file, &config, &mut template_engine)?;
+                        generate_template(file, &config, &mut template_engine).map_err(|err| {
+                            format!("something went wrong while generating {name}:\n    {err}")
+                        })?;
                     }
                 } else {
                     return Err(format!("could not find {}", &name).into());
                 }
             } else {
                 create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
-                for (_, file) in manifest.files.iter() {
+                for (name, file) in manifest.files.iter() {
                     if file.template.is_some() {
-                        generate_template(file, &config, &mut template_engine)?;
+                        generate_template(file, &config, &mut template_engine).map_err(|err| {
+                            format!("something went wrong while generating {name}:\n    {err}")
+                        })?;
                     }
                 }
             }
@@ -155,7 +169,7 @@ fn create_color_palette(
     if let Some(wallpaper) = path {
         let wp_path = wallpaper
             .canonicalize()
-            .map_err(|err| format!("could not find {}: {}", wallpaper.display(), err))?;
+            .map_err(|err| format!("could not find {}: {err}", wallpaper.display()))?;
         config.insert("wallpaper".to_string(), wp_path.display().to_string());
         let mut theme = "dark";
         if let Some(theme_pref) = &manifest.theme {
@@ -163,7 +177,7 @@ fn create_color_palette(
         }
         colors::generate_material_colors(&wp_path, theme, config)?;
     } else if has_templates(manifest) {
-        return Err("could not generate color palette: `wallpaper` is not set.".into());
+        return Err("could not generate color palette: wallpaper is not set.".into());
     } else {
         log!(Warning, "Skipping color scheme generation.");
     }
@@ -185,11 +199,10 @@ fn symlink_files(file: &File, force: bool) -> error::Result<()> {
     if dest_path.is_dir() {
         symlink_dir_all(
             &target_path,
-            &dest_path.join(
-                target_path
-                    .file_name()
-                    .ok_or(format!("file name not found of {:?}", target_path))?,
-            ),
+            &dest_path.join(target_path.file_name().ok_or(format!(
+                "could not extract file_name of {}",
+                target_path.display()
+            ))?),
             force,
         )?;
     } else {
@@ -205,7 +218,7 @@ fn resolve_home_dir(path: &Path) -> error::Result<PathBuf> {
     result.push_str(
         &path
             .to_str()
-            .unwrap()
+            .ok_or("invalid Unicode in Path")?
             .replace('~', &home_dir)
             .replace("$HOME", &home_dir),
     );
@@ -216,23 +229,16 @@ fn symlink_dir_all(target: &Path, dest: &Path, force: bool) -> error::Result<()>
     if target.is_dir() {
         for entry in fs::read_dir(target)? {
             let entry = entry?;
-            let dest = &dest.join(
-                entry
-                    .path()
-                    .file_name()
-                    .ok_or(format!("file name not found of {:?}", entry))?,
-            );
-            let dest_parent_dir = dest.parent().ok_or(format!(
-                "could not access parent dir of {}",
-                &dest.display()
-            ))?;
+            let dest = &dest.join(entry.path().file_name().ok_or(format!(
+                "could not extract file_name of {}",
+                entry.path().display()
+            ))?);
+            let dest_parent_dir = dest
+                .parent()
+                .ok_or(format!("could not access parent dir of {}", dest.display()))?;
             if !dest_parent_dir.exists() {
                 fs::create_dir_all(dest_parent_dir).map_err(|err| {
-                    format!(
-                        "could not create dir {}: {}",
-                        &dest_parent_dir.display(),
-                        err
-                    )
+                    format!("could not create dir {}: {err}", dest_parent_dir.display())
                 })?;
             }
             symlink_dir_all(&entry.path(), dest, force)?;
@@ -257,15 +263,19 @@ fn symlink_file(target: &Path, dest: &Path, force: bool) -> error::Result<()> {
                         dest.display()
                     );
                     std::fs::remove_file(dest).map_err(|err| {
-                        format!("could not remove file {}: {}", &dest.display(), err)
+                        format!("could not remove file {}: {err}", dest.display())
                     })?;
                     symlink(target, dest)?;
                     log!(Info, "Symlinked {} to {}", target.display(), dest.display());
                 } else if dest.is_symlink() {
                     if !dest.exists() {
-                        log!(Warning, "Destination is a broken symlink. Ignoring",);
+                        log!(
+                            Warning,
+                            "Destination {} is a broken symlink. Ignoring",
+                            dest.display()
+                        );
                         std::fs::remove_file(dest).map_err(|err| {
-                            format!("could not remove file {}: {}", &dest.display(), err)
+                            format!("could not remove file {}: {err}", dest.display())
                         })?;
                         symlink(target, dest)?;
                         log!(Info, "Symlinked {} to {}", target.display(), dest.display());
@@ -292,10 +302,9 @@ fn symlink_file(target: &Path, dest: &Path, force: bool) -> error::Result<()> {
             }
             _ => {
                 return Err(format!(
-                    "could not symlink {} to {}: {}",
-                    &target.display(),
-                    &dest.display(),
-                    err
+                    "could not symlink {} to {}: {err}",
+                    target.display(),
+                    dest.display()
                 )
                 .into());
             }
@@ -312,31 +321,29 @@ fn generate_template(
     if let Some(template_path) = &file.template {
         let template_path = template_path
             .canonicalize()
-            .map_err(|err| format!("could not find {}: {}", template_path.display(), err))?;
+            .map_err(|err| format!("could not find {}: {err}", template_path.display()))?;
         let data = fs::read_to_string(&template_path)
-            .map_err(|err| format!("could not read file {}: {}", &template_path.display(), err))?;
+            .map_err(|err| format!("could not read file {}: {err}", template_path.display()))?;
 
         let rendered = template_engine
             .compile(&data)
             .map_err(|err| {
                 format!(
-                    "could not compile template {}: {}",
-                    &template_path.display(),
-                    err
+                    "could not compile template {}: {err}",
+                    template_path.display()
                 )
             })?
             .render(template_engine, config)
             .to_string()
             .map_err(|err| {
                 format!(
-                    "could not render template {}: {}",
-                    &template_path.display(),
-                    err
+                    "could not render template {}: {err}",
+                    template_path.display()
                 )
             })?;
 
         fs::write(&file.target, rendered)
-            .map_err(|err| format!("could not write to {}: {}", &file.target.display(), err))?;
+            .map_err(|err| format!("could not write to {}: {err}", file.target.display()))?;
         log!(Info, "Generated template {}", template_path.display());
     }
     Ok(())

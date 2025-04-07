@@ -37,7 +37,7 @@ impl Cli {
         let _program_name = args.next();
 
         while let Some(arg) = args.next() {
-            let arg = arg.to_str().unwrap();
+            let arg = arg.to_str().ok_or("invalid Unicode in OsString")?;
             if arg.contains('-') {
                 match arg {
                     "-h" | "--help" => {
@@ -46,11 +46,9 @@ impl Cli {
                     }
                     "-m" | "--manifest" => {
                         if let Some(path) = args.next() {
-                            manifest_path = path
-                                .into_string()
-                                .map_err(|_| "failed to convert OsString to  String")?;
+                            manifest_path = path.into_string()?;
                         } else {
-                            return Err(format!("missing required argument path.\n{USAGE}").into());
+                            return Err(format!("missing required argument: PATH.\n{USAGE}").into());
                         }
                     }
                     _ => return Err(format!("invalid flag {arg}.\n{USAGE}").into()),
@@ -61,7 +59,7 @@ impl Cli {
                         let mut force = false;
                         let mut name: Option<String> = None;
                         for arg in args.by_ref() {
-                            let arg = arg.to_str().unwrap();
+                            let arg = arg.to_str().ok_or("invalid Unicode in OsString")?;
                             if arg.starts_with('-') {
                                 match arg {
                                     "-h" | "--help" => {
@@ -81,7 +79,7 @@ impl Cli {
                         let mut force = false;
                         let mut name: Option<String> = None;
                         for arg in args.by_ref() {
-                            let arg = arg.to_str().unwrap();
+                            let arg = arg.to_str().ok_or("invalid Unicode in OsString")?;
                             if arg.starts_with('-') {
                                 match arg {
                                     "-h" | "--help" => {
@@ -100,7 +98,7 @@ impl Cli {
                     "generate" => {
                         let mut name: Option<String> = None;
                         for arg in args.by_ref() {
-                            let arg = arg.to_str().unwrap();
+                            let arg = arg.to_str().ok_or("invalid Unicode in OsString")?;
                             if arg.starts_with('-') {
                                 match arg {
                                     "-h" | "--help" => {

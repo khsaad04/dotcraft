@@ -8,7 +8,7 @@ pub struct Error {
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "\x1b[0;31mERROR\x1b[0m: {}", self.ctx)
+        write!(f, "{}", self.ctx)
     }
 }
 
@@ -46,6 +46,14 @@ impl From<num::ParseIntError> for Error {
     fn from(value: num::ParseIntError) -> Self {
         Self {
             ctx: format!("{value}"),
+        }
+    }
+}
+
+impl From<std::ffi::OsString> for Error {
+    fn from(value: std::ffi::OsString) -> Self {
+        Self {
+            ctx: format!("invalid Unicode in OsString: {value:#?}"),
         }
     }
 }
