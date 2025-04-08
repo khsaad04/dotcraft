@@ -17,16 +17,40 @@ pub enum SubCommand {
     Generate { name: Option<String> },
 }
 
-const USAGE: &str = "Usage: dotman [OPTION] <SUBCOMMAND>
+const USAGE: &str = "
+Usage: dotman [OPTIONS] <SUBCOMMAND>
 
 Options:
-  -m, --manifest <PATH>  custom path to manifest file [default: Manifest.toml]
-  -h, --help             show this help message
+    -m, --manifest <PATH>  Path to Manifest.toml [default: ./Manifest.toml]
+    -h, --help             Print help
 
 Subcommands:
-  sync      [-f | --force] [NAME] symlink files and generate templates 
-  link      [-f | --force] [NAME] symlink files
-  generate  [NAME] generate templates";
+    sync      Symlink files and generate templates 
+    link      Symlink files
+    generate  Generate templates";
+
+const SYNC_USAGE: &str = "
+Usage: dotman sync [OPTIONS]
+       dotman sync [OPTIONS] [<NAME>]
+
+Options:
+    -f, --force  Force remove existing files
+    -h, --help   Print help";
+
+const LINK_USAGE: &str = "
+Usage: dotman sync [OPTIONS]
+       dotman sync [OPTIONS] [<NAME>]
+
+Options:
+    -f, --force  Force remove existing files
+    -h, --help   Print help";
+
+const GENERATE_USAGE: &str = "
+Usage: dotman sync [OPTIONS]
+       dotman sync [OPTIONS] [<NAME>]
+
+Options:
+    -h, --help   Print help";
 
 impl Cli {
     pub fn try_parse() -> error::Result<Self> {
@@ -41,7 +65,7 @@ impl Cli {
             if arg.contains('-') {
                 match arg {
                     "-h" | "--help" => {
-                        println!("{USAGE}");
+                        println!("Yet another dotfile manager\n{USAGE}");
                         exit(0);
                     }
                     "-m" | "--manifest" => {
@@ -63,11 +87,17 @@ impl Cli {
                             if arg.starts_with('-') {
                                 match arg {
                                     "-h" | "--help" => {
-                                        println!("{USAGE}");
+                                        println!(
+                                            "Symlink files and generate templates\n{SYNC_USAGE}"
+                                        );
                                         exit(0);
                                     }
                                     "-f" | "--force" => force = true,
-                                    _ => return Err(format!("invalid flag {arg}.\n{USAGE}").into()),
+                                    _ => {
+                                        return Err(
+                                            format!("invalid flag {arg}.\n{SYNC_USAGE}").into()
+                                        )
+                                    }
                                 }
                             } else {
                                 name = Some(arg.to_string());
@@ -83,11 +113,15 @@ impl Cli {
                             if arg.starts_with('-') {
                                 match arg {
                                     "-h" | "--help" => {
-                                        println!("{USAGE}");
+                                        println!("Symlink files\n{LINK_USAGE}");
                                         exit(0);
                                     }
                                     "-f" | "--force" => force = true,
-                                    _ => return Err(format!("invalid flag {arg}.\n{USAGE}").into()),
+                                    _ => {
+                                        return Err(
+                                            format!("invalid flag {arg}.\n{LINK_USAGE}").into()
+                                        )
+                                    }
                                 }
                             } else {
                                 name = Some(arg.to_string());
@@ -102,10 +136,15 @@ impl Cli {
                             if arg.starts_with('-') {
                                 match arg {
                                     "-h" | "--help" => {
-                                        println!("{USAGE}");
+                                        println!("Generate templates\n{GENERATE_USAGE}");
                                         exit(0);
                                     }
-                                    _ => return Err(format!("invalid flag {arg}.\n{USAGE}").into()),
+                                    _ => {
+                                        return Err(format!(
+                                            "invalid flag {arg}.\n{GENERATE_USAGE}"
+                                        )
+                                        .into())
+                                    }
                                 }
                             } else {
                                 name = Some(arg.to_string());

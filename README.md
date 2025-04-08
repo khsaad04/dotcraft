@@ -1,3 +1,22 @@
+# Dotman
+Yet another dotfile manager
+
+```console
+$ dotman --help
+Yet another dotfile manager
+
+Usage: dotman [OPTIONS] <SUBCOMMAND>
+
+Options:
+    -m, --manifest <PATH>  Path to Manifest.toml [default: ./Manifest.toml]
+    -h, --help             Print help
+
+Subcommands:
+    sync      Symlink files and generate templates 
+    link      Symlink files
+    generate  Generate templates
+```
+
 ## TODO
 
 - [ ] Finish writing the README explaining the usage with good examples
