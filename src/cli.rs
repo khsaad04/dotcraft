@@ -1,6 +1,8 @@
 use crate::error;
 
 use std::env;
+use std::ffi::OsString;
+use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::process::exit;
 
@@ -54,105 +56,105 @@ Options:
 
 impl Cli {
     pub fn try_parse() -> error::Result<Self> {
-        let mut manifest_path = "Manifest.toml".to_string();
+        let mut manifest_path = OsString::from("Manifest.toml");
         let mut subcommand: Option<SubCommand> = None;
 
         let mut args = env::args_os();
         let _program_name = args.next();
 
         while let Some(arg) = args.next() {
-            let arg = arg.to_str().ok_or("invalid Unicode in OsString")?;
-            if arg.contains('-') {
+            let arg = arg.as_bytes();
+            if arg.starts_with(b"-") {
                 match arg {
-                    "-h" | "--help" => {
+                    b"-h" | b"--help" => {
                         println!("Yet another dotfile manager\n{USAGE}");
                         exit(0);
                     }
-                    "-m" | "--manifest" => {
+                    b"-m" | b"--manifest" => {
                         if let Some(path) = args.next() {
-                            manifest_path = path.into_string()?;
+                            manifest_path = path;
                         } else {
                             return Err(format!("missing required argument: PATH.\n{USAGE}").into());
                         }
                     }
-                    _ => return Err(format!("invalid flag {arg}.\n{USAGE}").into()),
+                    _ => return Err(format!("invalid flag {arg:?}.\n{USAGE}",).into()),
                 }
             } else {
                 match arg {
-                    "sync" => {
+                    b"sync" => {
                         let mut force = false;
                         let mut name: Option<String> = None;
                         for arg in args.by_ref() {
-                            let arg = arg.to_str().ok_or("invalid Unicode in OsString")?;
-                            if arg.starts_with('-') {
+                            let arg = arg.as_bytes();
+                            if arg.starts_with(b"-") {
                                 match arg {
-                                    "-h" | "--help" => {
+                                    b"-h" | b"--help" => {
                                         println!(
                                             "Symlink files and generate templates\n{SYNC_USAGE}"
                                         );
                                         exit(0);
                                     }
-                                    "-f" | "--force" => force = true,
+                                    b"-f" | b"--force" => force = true,
                                     _ => {
                                         return Err(
-                                            format!("invalid flag {arg}.\n{SYNC_USAGE}").into()
+                                            format!("invalid flag {arg:?}.\n{SYNC_USAGE}").into()
                                         )
                                     }
                                 }
                             } else {
-                                name = Some(arg.to_string());
+                                name = Some(String::from_utf8_lossy(arg).to_string());
                             }
                         }
                         subcommand = Some(SubCommand::Sync { force, name });
                     }
-                    "link" => {
+                    b"link" => {
                         let mut force = false;
                         let mut name: Option<String> = None;
                         for arg in args.by_ref() {
-                            let arg = arg.to_str().ok_or("invalid Unicode in OsString")?;
-                            if arg.starts_with('-') {
+                            let arg = arg.as_bytes();
+                            if arg.starts_with(b"-") {
                                 match arg {
-                                    "-h" | "--help" => {
+                                    b"-h" | b"--help" => {
                                         println!("Symlink files\n{LINK_USAGE}");
                                         exit(0);
                                     }
-                                    "-f" | "--force" => force = true,
+                                    b"-f" | b"--force" => force = true,
                                     _ => {
                                         return Err(
-                                            format!("invalid flag {arg}.\n{LINK_USAGE}").into()
+                                            format!("invalid flag {arg:?}.\n{LINK_USAGE}").into()
                                         )
                                     }
                                 }
                             } else {
-                                name = Some(arg.to_string());
+                                name = Some(String::from_utf8_lossy(arg).to_string());
                             }
                         }
                         subcommand = Some(SubCommand::Link { force, name });
                     }
-                    "generate" => {
+                    b"generate" => {
                         let mut name: Option<String> = None;
                         for arg in args.by_ref() {
-                            let arg = arg.to_str().ok_or("invalid Unicode in OsString")?;
-                            if arg.starts_with('-') {
+                            let arg = arg.as_bytes();
+                            if arg.starts_with(b"-") {
                                 match arg {
-                                    "-h" | "--help" => {
+                                    b"-h" | b"--help" => {
                                         println!("Generate templates\n{GENERATE_USAGE}");
                                         exit(0);
                                     }
                                     _ => {
                                         return Err(format!(
-                                            "invalid flag {arg}.\n{GENERATE_USAGE}"
+                                            "invalid flag {arg:?}.\n{GENERATE_USAGE}"
                                         )
                                         .into())
                                     }
                                 }
                             } else {
-                                name = Some(arg.to_string());
+                                name = Some(String::from_utf8_lossy(arg).to_string());
                             }
                         }
                         subcommand = Some(SubCommand::Generate { name });
                     }
-                    _ => return Err(format!("invalid subcommand {arg}.\n{USAGE}").into()),
+                    _ => return Err(format!("invalid subcommand {arg:?}.\n{USAGE}").into()),
                 }
             }
         }
