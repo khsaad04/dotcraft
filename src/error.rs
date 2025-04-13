@@ -1,4 +1,4 @@
-use std::{env, io, num};
+use std::io;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -30,30 +30,6 @@ impl From<io::Error> for Error {
     fn from(value: io::Error) -> Self {
         Self {
             ctx: format!("{value}"),
-        }
-    }
-}
-
-impl From<env::VarError> for Error {
-    fn from(value: env::VarError) -> Self {
-        Self {
-            ctx: format!("{value}"),
-        }
-    }
-}
-
-impl From<num::ParseIntError> for Error {
-    fn from(value: num::ParseIntError) -> Self {
-        Self {
-            ctx: format!("{value}"),
-        }
-    }
-}
-
-impl From<std::ffi::OsString> for Error {
-    fn from(value: std::ffi::OsString) -> Self {
-        Self {
-            ctx: format!("invalid Unicode in OsString: {value:#?}"),
         }
     }
 }
