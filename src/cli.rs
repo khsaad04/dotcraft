@@ -32,24 +32,21 @@ Subcommands:
     generate  Generate templates";
 
 const SYNC_USAGE: &str = "
-Usage: dotman sync [OPTIONS]
-       dotman sync [OPTIONS] [<NAME>]
+Usage: dotman sync [OPTIONS] [NAME]
 
 Options:
     -f, --force  Force remove existing files
     -h, --help   Print help";
 
 const LINK_USAGE: &str = "
-Usage: dotman sync [OPTIONS]
-       dotman sync [OPTIONS] [<NAME>]
+Usage: dotman link [OPTIONS] [NAME]
 
 Options:
     -f, --force  Force remove existing files
     -h, --help   Print help";
 
 const GENERATE_USAGE: &str = "
-Usage: dotman sync [OPTIONS]
-       dotman sync [OPTIONS] [<NAME>]
+Usage: dotman generate [OPTIONS] [NAME]
 
 Options:
     -h, --help   Print help";
