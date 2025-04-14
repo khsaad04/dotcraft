@@ -74,7 +74,13 @@ impl Cli {
                             return Err(format!("missing required argument: PATH.\n{USAGE}").into());
                         }
                     }
-                    _ => return Err(format!("invalid flag {arg:?}.\n{USAGE}",).into()),
+                    _ => {
+                        return Err(format!(
+                            "invalid flag {}.\n{USAGE}",
+                            String::from_utf8_lossy(arg)
+                        )
+                        .into())
+                    }
                 }
             } else {
                 match arg {
@@ -93,9 +99,11 @@ impl Cli {
                                     }
                                     b"-f" | b"--force" => force = true,
                                     _ => {
-                                        return Err(
-                                            format!("invalid flag {arg:?}.\n{SYNC_USAGE}").into()
+                                        return Err(format!(
+                                            "invalid flag {}.\n{SYNC_USAGE}",
+                                            String::from_utf8_lossy(arg)
                                         )
+                                        .into())
                                     }
                                 }
                             } else {
@@ -117,9 +125,11 @@ impl Cli {
                                     }
                                     b"-f" | b"--force" => force = true,
                                     _ => {
-                                        return Err(
-                                            format!("invalid flag {arg:?}.\n{LINK_USAGE}").into()
+                                        return Err(format!(
+                                            "invalid flag {}.\n{LINK_USAGE}",
+                                            String::from_utf8_lossy(arg)
                                         )
+                                        .into())
                                     }
                                 }
                             } else {
@@ -140,7 +150,8 @@ impl Cli {
                                     }
                                     _ => {
                                         return Err(format!(
-                                            "invalid flag {arg:?}.\n{GENERATE_USAGE}"
+                                            "invalid flag {}.\n{GENERATE_USAGE}",
+                                            String::from_utf8_lossy(arg)
                                         )
                                         .into())
                                     }
@@ -151,7 +162,13 @@ impl Cli {
                         }
                         subcommand = Some(SubCommand::Generate { name });
                     }
-                    _ => return Err(format!("invalid subcommand {arg:?}.\n{USAGE}").into()),
+                    _ => {
+                        return Err(format!(
+                            "invalid subcommand {}.\n{USAGE}",
+                            String::from_utf8_lossy(arg)
+                        )
+                        .into())
+                    }
                 }
             }
         }
