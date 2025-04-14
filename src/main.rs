@@ -55,6 +55,7 @@ impl TryFrom<&Path> for Manifest {
 enum LogLevel {
     Info,
     Warning,
+    Error,
 }
 
 macro_rules! log {
@@ -62,18 +63,23 @@ macro_rules! log {
         match LogLevel::$loglevel {
             LogLevel::Info => {
                 print!("\x1b[0;32mINFO\x1b[0m: ");
+                println!($($arg)*);
             }
             LogLevel::Warning => {
                 print!("\x1b[0;33mWARNING\x1b[0m: ");
+                println!($($arg)*);
+            }
+            LogLevel::Error => {
+                eprint!("\x1b[0;31mERROR\x1b[0m: ");
+                eprintln!($($arg)*);
             }
         }
-        println!($($arg)*);
     };
 }
 
 fn main() {
     if let Err(err) = exec_subcommand() {
-        eprintln!("\x1b[0;31mERROR\x1b[0m: {err}");
+        log!(Error, "{err}");
         exit(1);
     }
 }
