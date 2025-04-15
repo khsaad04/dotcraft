@@ -8,7 +8,7 @@ use std::{
     collections::HashMap,
     fs, io,
     os::unix::fs::symlink,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::exit,
 };
 
@@ -204,17 +204,20 @@ fn has_templates(manifest: &Manifest) -> bool {
 }
 
 fn resolve_home_dir(path: &Path) -> error::Result<PathBuf> {
-    let mut result = String::new();
     let home_dir =
         std::env::var("HOME").map_err(|err| format!("could not find home directory: {err}"))?;
-    result.push_str(
-        &path
-            .to_str()
-            .ok_or("invalid Unicode in Path")?
-            .replace('~', &home_dir)
-            .replace("$HOME", &home_dir),
-    );
-    Ok(PathBuf::from(result))
+
+    if let Some(prefix) = path.components().next() {
+        if prefix == Component::Normal("~".as_ref()) {
+            if let Ok(stripped_path) = path.strip_prefix("~") {
+                let mut result = PathBuf::new();
+                result.push(home_dir);
+                result.push(stripped_path);
+                return Ok(result);
+            }
+        }
+    }
+    Ok(path.to_path_buf())
 }
 
 fn symlink_dir_all(target: &Path, dest: &Path, force: bool) -> error::Result<()> {
