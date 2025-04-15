@@ -20,26 +20,26 @@ pub enum SubCommand {
 }
 
 const USAGE: &str = "
-Usage: dotman [-m <PATH>] <subcommand> [<args>]
+Usage: dotman [OPTION] <SUBCOMMAND>
 
 Options:
-    -m, --manifest  Path to Manifest.toml [default: ./Manifest.toml]
-    -h, --help      Print help
+    -m, --manifest <FILE>  Path to Manifest file [default: ./Manifest.toml]
+    -h, --help             Print help
 
 Subcommands:
-    sync            Symlink files and generate templates 
-    link            Symlink files
-    generate        Generate templates";
+    sync                   Symlink files and generate templates 
+    link                   Symlink files
+    generate               Generate templates";
 
 const SYNC_USAGE: &str = "
-Usage: dotman sync [-f] [NAME]
+Usage: dotman sync [OPTION] [NAME]
 
 Options:
     -f, --force  Force remove existing files
     -h, --help   Print help";
 
 const LINK_USAGE: &str = "
-Usage: dotman link [-f] [NAME]
+Usage: dotman link [OPTION] [NAME]
 
 Options:
     -f, --force  Force remove existing files
@@ -49,7 +49,7 @@ const GENERATE_USAGE: &str = "
 Usage: dotman generate [NAME]
 
 Options:
-    -h, --help   Print help";
+    -h, --help  Print help";
 
 impl Cli {
     pub fn try_parse() -> error::Result<Self> {
@@ -64,7 +64,7 @@ impl Cli {
             if arg.starts_with(b"-") {
                 match arg {
                     b"-h" | b"--help" => {
-                        println!("Yet another dotfile manager\n{USAGE}");
+                        println!("Dotfiles manager for unix-like operating systems\n{USAGE}");
                         exit(0);
                     }
                     b"-m" | b"--manifest" => {

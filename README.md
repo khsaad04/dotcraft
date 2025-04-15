@@ -3,18 +3,18 @@ Yet another dotfile manager
 
 ```console
 $ dotman --help
-Yet another dotfile manager
+Dotfiles manager for unix-like operating systems 
 
-Usage: dotman [OPTIONS] <SUBCOMMAND>
+Usage: dotman [OPTION] <SUBCOMMAND>
 
 Options:
-    -m, --manifest <PATH>  Path to Manifest.toml [default: ./Manifest.toml]
+    -m, --manifest <FILE>  Path to Manifest file [default: ./Manifest.toml]
     -h, --help             Print help
 
 Subcommands:
-    sync      Symlink files and generate templates 
-    link      Symlink files
-    generate  Generate templates
+    sync                   Symlink files and generate templates 
+    link                   Symlink files
+    generate               Generate templates
 ```
 
 ## TODO
