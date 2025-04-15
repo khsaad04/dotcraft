@@ -97,19 +97,15 @@ fn exec_subcommand() -> error::Result<()> {
         cli::SubCommand::Sync { force, name } => {
             if let Some(name) = name {
                 if let Some(file) = manifest.files.get(&name) {
-                    symlink_dir_all(
-                        &resolve_home_dir(&file.target)?.canonicalize()?,
-                        &resolve_home_dir(&file.dest)?,
-                        force,
-                    )
-                    .map_err(|err| {
+                    symlink_dir_all(&file.target, &file.dest, force).map_err(|err| {
                         format!("something went wrong while symlinking {name}:\n    {err}")
                     })?;
-                    if file.template.is_some() {
+                    if let Some(template) = &file.template {
                         create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
-                        generate_template(file, &config, &mut template_engine).map_err(|err| {
-                            format!("something went wrong while generating {name}:\n    {err}")
-                        })?;
+                        generate_template(&file.dest, template, &config, &mut template_engine)
+                            .map_err(|err| {
+                                format!("something went wrong while generating {name}:\n    {err}")
+                            })?;
                     }
                 } else {
                     return Err(format!("could not find {name}").into());
@@ -117,18 +113,14 @@ fn exec_subcommand() -> error::Result<()> {
             } else {
                 create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
                 for (name, file) in manifest.files.iter() {
-                    symlink_dir_all(
-                        &resolve_home_dir(&file.target)?.canonicalize()?,
-                        &resolve_home_dir(&file.dest)?,
-                        force,
-                    )
-                    .map_err(|err| {
+                    symlink_dir_all(&file.target, &file.dest, force).map_err(|err| {
                         format!("something went wrong while symlinking {name}:\n    {err}")
                     })?;
-                    if file.template.is_some() {
-                        generate_template(file, &config, &mut template_engine).map_err(|err| {
-                            format!("something went wrong while generating {name}:\n    {err}")
-                        })?;
+                    if let Some(template) = &file.template {
+                        generate_template(&file.dest, template, &config, &mut template_engine)
+                            .map_err(|err| {
+                                format!("something went wrong while generating {name}:\n    {err}")
+                            })?;
                     }
                 }
             }
@@ -136,12 +128,7 @@ fn exec_subcommand() -> error::Result<()> {
         cli::SubCommand::Link { force, name } => {
             if let Some(name) = name {
                 if let Some(file) = manifest.files.get(&name) {
-                    symlink_dir_all(
-                        &resolve_home_dir(&file.target)?.canonicalize()?,
-                        &resolve_home_dir(&file.dest)?,
-                        force,
-                    )
-                    .map_err(|err| {
+                    symlink_dir_all(&file.target, &file.dest, force).map_err(|err| {
                         format!("something went wrong while symlinking {name}:\n    {err}")
                     })?;
                 } else {
@@ -149,12 +136,7 @@ fn exec_subcommand() -> error::Result<()> {
                 }
             } else {
                 for (name, file) in manifest.files.iter() {
-                    symlink_dir_all(
-                        &resolve_home_dir(&file.target)?.canonicalize()?,
-                        &resolve_home_dir(&file.dest)?,
-                        force,
-                    )
-                    .map_err(|err| {
+                    symlink_dir_all(&file.target, &file.dest, force).map_err(|err| {
                         format!("something went wrong while symlinking {name}:\n    {err}")
                     })?;
                 }
@@ -163,11 +145,12 @@ fn exec_subcommand() -> error::Result<()> {
         cli::SubCommand::Generate { name } => {
             if let Some(name) = name {
                 if let Some(file) = manifest.files.get(&name) {
-                    if file.template.is_some() {
+                    if let Some(template) = &file.template {
                         create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
-                        generate_template(file, &config, &mut template_engine).map_err(|err| {
-                            format!("something went wrong while generating {name}:\n    {err}")
-                        })?;
+                        generate_template(&file.dest, template, &config, &mut template_engine)
+                            .map_err(|err| {
+                                format!("something went wrong while generating {name}:\n    {err}")
+                            })?;
                     }
                 } else {
                     return Err(format!("could not find {}", &name).into());
@@ -175,10 +158,11 @@ fn exec_subcommand() -> error::Result<()> {
             } else {
                 create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
                 for (name, file) in manifest.files.iter() {
-                    if file.template.is_some() {
-                        generate_template(file, &config, &mut template_engine).map_err(|err| {
-                            format!("something went wrong while generating {name}:\n    {err}")
-                        })?;
+                    if let Some(template) = &file.template {
+                        generate_template(&file.dest, template, &config, &mut template_engine)
+                            .map_err(|err| {
+                                format!("something went wrong while generating {name}:\n    {err}")
+                            })?;
                     }
                 }
             }
@@ -234,6 +218,11 @@ fn resolve_home_dir(path: &Path) -> error::Result<PathBuf> {
 }
 
 fn symlink_dir_all(target: &Path, dest: &Path, force: bool) -> error::Result<()> {
+    let target = resolve_home_dir(target)?
+        .canonicalize()
+        .map_err(|err| format!("could not find {}: {err}", target.display()))?;
+    let dest = resolve_home_dir(dest)?;
+
     if target.is_dir() {
         for entry in fs::read_dir(target)? {
             let entry = entry?;
@@ -252,7 +241,7 @@ fn symlink_dir_all(target: &Path, dest: &Path, force: bool) -> error::Result<()>
             symlink_dir_all(&entry.path(), dest, force)?;
         }
     } else {
-        symlink_file(target, dest, force)?;
+        symlink_file(&target, &dest, force)?;
     }
     Ok(())
 }
@@ -322,37 +311,28 @@ fn symlink_file(target: &Path, dest: &Path, force: bool) -> error::Result<()> {
 }
 
 fn generate_template(
-    file: &File,
+    dest: &Path,
+    template: &Path,
     config: &VarMap,
     template_engine: &mut upon::Engine,
 ) -> error::Result<()> {
-    if let Some(template_path) = &file.template {
-        let template_path = template_path
-            .canonicalize()
-            .map_err(|err| format!("could not find {}: {err}", template_path.display()))?;
-        let data = fs::read_to_string(&template_path)
-            .map_err(|err| format!("could not read file {}: {err}", template_path.display()))?;
+    let template = resolve_home_dir(template)?
+        .canonicalize()
+        .map_err(|err| format!("could not find {}: {err}", template.display()))?;
+    let dest = resolve_home_dir(dest)?;
 
-        let rendered = template_engine
-            .compile(&data)
-            .map_err(|err| {
-                format!(
-                    "could not compile template {}: {err}",
-                    template_path.display()
-                )
-            })?
-            .render(template_engine, config)
-            .to_string()
-            .map_err(|err| {
-                format!(
-                    "could not render template {}: {err}",
-                    template_path.display()
-                )
-            })?;
+    let data = fs::read_to_string(&template)
+        .map_err(|err| format!("could not read file {}: {err}", template.display()))?;
 
-        fs::write(&file.target, rendered)
-            .map_err(|err| format!("could not write to {}: {err}", file.target.display()))?;
-        log!(Info, "Generated template {}", template_path.display());
-    }
+    let rendered = template_engine
+        .compile(&data)
+        .map_err(|err| format!("could not compile template {}: {err}", template.display()))?
+        .render(template_engine, config)
+        .to_string()
+        .map_err(|err| format!("could not render template {}: {err}", template.display()))?;
+
+    fs::write(&dest, rendered)
+        .map_err(|err| format!("could not write to {}: {err}", dest.display()))?;
+    log!(Info, "Generated template {}", template.display());
     Ok(())
 }
