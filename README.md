@@ -1,11 +1,11 @@
-# Dotman
+# Dotcraft
 Yet another dotfile manager
 
 ```console
-$ dotman --help
+$ dotcraft --help
 Dotfiles manager for unix-like operating systems 
 
-Usage: dotman [OPTION] <SUBCOMMAND>
+Usage: dotcraft [OPTION] <SUBCOMMAND>
 
 Options:
     -m, --manifest <FILE>  Path to Manifest file [default: ./Manifest.toml]

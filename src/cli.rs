@@ -20,7 +20,7 @@ pub enum SubCommand {
 }
 
 const USAGE: &str = "
-Usage: dotman [OPTION] <SUBCOMMAND>
+Usage: dotcraft [OPTION] <SUBCOMMAND>
 
 Options:
     -m, --manifest <FILE>  Path to Manifest file [default: ./Manifest.toml]
@@ -32,21 +32,21 @@ Subcommands:
     generate               Generate templates";
 
 const SYNC_USAGE: &str = "
-Usage: dotman sync [OPTION] [NAME]
+Usage: dotcraft sync [OPTION] [NAME]
 
 Options:
     -f, --force  Force remove existing files
     -h, --help   Print help";
 
 const LINK_USAGE: &str = "
-Usage: dotman link [OPTION] [NAME]
+Usage: dotcraft link [OPTION] [NAME]
 
 Options:
     -f, --force  Force remove existing files
     -h, --help   Print help";
 
 const GENERATE_USAGE: &str = "
-Usage: dotman generate [NAME]
+Usage: dotcraft generate [NAME]
 
 Options:
     -h, --help  Print help";
