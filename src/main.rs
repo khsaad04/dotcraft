@@ -97,7 +97,12 @@ fn exec_subcommand() -> error::Result<()> {
         cli::SubCommand::Sync { force, name } => {
             if let Some(name) = name {
                 if let Some(file) = manifest.files.get(&name) {
-                    symlink_files(file, force).map_err(|err| {
+                    symlink_dir_all(
+                        &resolve_home_dir(&file.target)?.canonicalize()?,
+                        &resolve_home_dir(&file.dest)?,
+                        force,
+                    )
+                    .map_err(|err| {
                         format!("something went wrong while symlinking {name}:\n    {err}")
                     })?;
                     if file.template.is_some() {
@@ -112,7 +117,12 @@ fn exec_subcommand() -> error::Result<()> {
             } else {
                 create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
                 for (name, file) in manifest.files.iter() {
-                    symlink_files(file, force).map_err(|err| {
+                    symlink_dir_all(
+                        &resolve_home_dir(&file.target)?.canonicalize()?,
+                        &resolve_home_dir(&file.dest)?,
+                        force,
+                    )
+                    .map_err(|err| {
                         format!("something went wrong while symlinking {name}:\n    {err}")
                     })?;
                     if file.template.is_some() {
@@ -126,7 +136,12 @@ fn exec_subcommand() -> error::Result<()> {
         cli::SubCommand::Link { force, name } => {
             if let Some(name) = name {
                 if let Some(file) = manifest.files.get(&name) {
-                    symlink_files(file, force).map_err(|err| {
+                    symlink_dir_all(
+                        &resolve_home_dir(&file.target)?.canonicalize()?,
+                        &resolve_home_dir(&file.dest)?,
+                        force,
+                    )
+                    .map_err(|err| {
                         format!("something went wrong while symlinking {name}:\n    {err}")
                     })?;
                 } else {
@@ -134,7 +149,12 @@ fn exec_subcommand() -> error::Result<()> {
                 }
             } else {
                 for (name, file) in manifest.files.iter() {
-                    symlink_files(file, force).map_err(|err| {
+                    symlink_dir_all(
+                        &resolve_home_dir(&file.target)?.canonicalize()?,
+                        &resolve_home_dir(&file.dest)?,
+                        force,
+                    )
+                    .map_err(|err| {
                         format!("something went wrong while symlinking {name}:\n    {err}")
                     })?;
                 }
@@ -197,24 +217,6 @@ fn has_templates(manifest: &Manifest) -> bool {
         }
     }
     false
-}
-
-fn symlink_files(file: &File, force: bool) -> error::Result<()> {
-    let target_path = resolve_home_dir(&file.target)?.canonicalize()?;
-    let dest_path = resolve_home_dir(&file.dest)?;
-    if dest_path.is_dir() {
-        symlink_dir_all(
-            &target_path,
-            &dest_path.join(target_path.file_name().ok_or(format!(
-                "could not extract file_name of {}",
-                target_path.display()
-            ))?),
-            force,
-        )?;
-    } else {
-        symlink_dir_all(&target_path, &dest_path, force)?;
-    };
-    Ok(())
 }
 
 fn resolve_home_dir(path: &Path) -> error::Result<PathBuf> {
