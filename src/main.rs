@@ -89,13 +89,13 @@ macro_rules! log {
 }
 
 fn main() {
-    if let Err(err) = exec_subcommand() {
+    if let Err(err) = entrypoint() {
         log!(Error, "{err}");
         exit(1);
     }
 }
 
-fn exec_subcommand() -> error::Result<()> {
+fn entrypoint() -> error::Result<()> {
     let args = cli::Cli::try_parse()?;
 
     let mut config: VarMap = HashMap::new();
