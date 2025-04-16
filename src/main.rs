@@ -15,7 +15,8 @@ use std::{
 #[derive(Debug, Deserialize)]
 struct Manifest {
     wallpaper: Option<PathBuf>,
-    theme: Option<String>,
+    #[serde(default = "default_theme_option")]
+    theme: String,
     files: IndexMap<String, File>,
 }
 
@@ -29,6 +30,10 @@ struct File {
 }
 
 type VarMap = HashMap<String, String>;
+
+fn default_theme_option() -> String {
+    "dark".to_string()
+}
 
 fn default_recursive_option() -> bool {
     false
@@ -187,11 +192,7 @@ fn create_color_palette(
             .canonicalize()
             .map_err(|err| format!("could not find {}: {err}", wallpaper.display()))?;
         config.insert("wallpaper".to_string(), wp_path.display().to_string());
-        let mut theme = "dark";
-        if let Some(theme_pref) = &manifest.theme {
-            theme = theme_pref;
-        }
-        colors::generate_material_colors(&wp_path, theme, config)?;
+        colors::generate_material_colors(&wp_path, &manifest.theme, config)?;
     } else if has_templates(manifest) {
         return Err("could not generate color palette: wallpaper is not set.".into());
     } else {
