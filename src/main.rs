@@ -204,7 +204,8 @@ fn has_templates(manifest: &Manifest) -> bool {
     false
 }
 
-fn resolve_home_dir(path: &Path) -> error::Result<PathBuf> {
+fn resolve_home_dir(path: impl AsRef<Path>) -> error::Result<PathBuf> {
+    let path = path.as_ref();
     let home_dir =
         std::env::var("HOME").map_err(|err| format!("could not find home directory: {err}"))?;
 
@@ -221,10 +222,15 @@ fn resolve_home_dir(path: &Path) -> error::Result<PathBuf> {
     Ok(path.to_path_buf())
 }
 
-fn symlink_dir_all(target: &Path, dest: &Path, force: bool, recursive: bool) -> error::Result<()> {
-    let target = resolve_home_dir(target)?
+fn symlink_dir_all(
+    target: impl AsRef<Path>,
+    dest: impl AsRef<Path>,
+    force: bool,
+    recursive: bool,
+) -> error::Result<()> {
+    let target = resolve_home_dir(&target)?
         .canonicalize()
-        .map_err(|err| format!("could not find {}: {err}", target.display()))?;
+        .map_err(|err| format!("could not find {}: {err}", target.as_ref().display()))?;
     let dest = resolve_home_dir(dest)?;
 
     if target.is_dir() && recursive {
@@ -242,7 +248,7 @@ fn symlink_dir_all(target: &Path, dest: &Path, force: bool, recursive: bool) -> 
                     format!("could not create dir {}: {err}", dest_parent_dir.display())
                 })?;
             }
-            symlink_dir_all(&entry.path(), dest, force, recursive)?;
+            symlink_dir_all(entry.path(), dest, force, recursive)?;
         }
     } else {
         symlink_file(&target, &dest, force)?;
@@ -250,7 +256,14 @@ fn symlink_dir_all(target: &Path, dest: &Path, force: bool, recursive: bool) -> 
     Ok(())
 }
 
-fn symlink_file(target: &Path, dest: &Path, force: bool) -> error::Result<()> {
+fn symlink_file(
+    target: impl AsRef<Path>,
+    dest: impl AsRef<Path>,
+    force: bool,
+) -> error::Result<()> {
+    let target = target.as_ref();
+    let dest = dest.as_ref();
+
     match symlink(target, dest) {
         Ok(()) => {
             log!(Info, "Symlinked {} to {}", target.display(), dest.display());
@@ -315,15 +328,15 @@ fn symlink_file(target: &Path, dest: &Path, force: bool) -> error::Result<()> {
 }
 
 fn generate_template(
-    dest: &Path,
-    template: &Path,
+    dest: impl AsRef<Path>,
+    template: impl AsRef<Path>,
     config: &VarMap,
     template_engine: &mut upon::Engine,
 ) -> error::Result<()> {
-    let template = resolve_home_dir(template)?
+    let template = resolve_home_dir(template.as_ref())?
         .canonicalize()
-        .map_err(|err| format!("could not find {}: {err}", template.display()))?;
-    let dest = resolve_home_dir(dest)?;
+        .map_err(|err| format!("could not find {}: {err}", template.as_ref().display()))?;
+    let dest = resolve_home_dir(dest.as_ref())?;
 
     let data = fs::read_to_string(&template)
         .map_err(|err| format!("could not read file {}: {err}", template.display()))?;
