@@ -106,92 +106,70 @@ fn entrypoint() -> error::Result<()> {
 
     match args.subcommand {
         cli::SubCommand::Sync { force, name } => {
-            if let Some(name) = name {
-                if let Some(file) = manifest.files.get(&name) {
-                    if let Some(target) = &file.target {
-                        symlink_dir_all(target, &file.dest, force, file.recursive).map_err(
-                            |err| {
-                                format!("something went wrong while symlinking {name}:\n    {err}")
-                            },
-                        )?;
-                    }
-                    if let Some(template) = &file.template {
-                        create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
-                        generate_template(&file.dest, template, &config, &mut template_engine)
-                            .map_err(|err| {
-                                format!("something went wrong while generating {name}:\n    {err}")
-                            })?;
-                    }
-                } else {
-                    return Err(format!("could not find {name}").into());
-                }
-            } else {
-                create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
-                for (name, file) in manifest.files.iter() {
-                    if let Some(target) = &file.target {
-                        symlink_dir_all(target, &file.dest, force, file.recursive).map_err(
-                            |err| {
-                                format!("something went wrong while symlinking {name}:\n    {err}")
-                            },
-                        )?;
-                    }
-                    if let Some(template) = &file.template {
-                        generate_template(&file.dest, template, &config, &mut template_engine)
-                            .map_err(|err| {
-                                format!("something went wrong while generating {name}:\n    {err}")
-                            })?;
-                    }
-                }
-            }
+            exec_symlink_command(&name, force, &manifest.files)?;
+            exec_generate_command(&name, &manifest, &mut config, &mut template_engine)?;
         }
         cli::SubCommand::Link { force, name } => {
-            if let Some(name) = name {
-                if let Some(file) = manifest.files.get(&name) {
-                    if let Some(target) = &file.target {
-                        symlink_dir_all(target, &file.dest, force, file.recursive).map_err(
-                            |err| {
-                                format!("something went wrong while symlinking {name}:\n    {err}")
-                            },
-                        )?;
-                    }
-                } else {
-                    return Err(format!("could not find {}", &name).into());
-                }
-            } else {
-                for (name, file) in manifest.files.iter() {
-                    if let Some(target) = &file.target {
-                        symlink_dir_all(target, &file.dest, force, file.recursive).map_err(
-                            |err| {
-                                format!("something went wrong while symlinking {name}:\n    {err}")
-                            },
-                        )?;
-                    }
-                }
-            }
+            exec_symlink_command(&name, force, &manifest.files)?;
         }
         cli::SubCommand::Generate { name } => {
-            if let Some(name) = name {
-                if let Some(file) = manifest.files.get(&name) {
-                    if let Some(template) = &file.template {
-                        create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
-                        generate_template(&file.dest, template, &config, &mut template_engine)
-                            .map_err(|err| {
-                                format!("something went wrong while generating {name}:\n    {err}")
-                            })?;
-                    }
-                } else {
-                    return Err(format!("could not find {}", &name).into());
-                }
-            } else {
-                create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
-                for (name, file) in manifest.files.iter() {
-                    if let Some(template) = &file.template {
-                        generate_template(&file.dest, template, &config, &mut template_engine)
-                            .map_err(|err| {
-                                format!("something went wrong while generating {name}:\n    {err}")
-                            })?;
-                    }
-                }
+            exec_generate_command(&name, &manifest, &mut config, &mut template_engine)?;
+        }
+    }
+    Ok(())
+}
+
+fn exec_symlink_command(
+    name: &Option<String>,
+    force: bool,
+    files: &IndexMap<String, File>,
+) -> error::Result<()> {
+    if let Some(name) = name {
+        if let Some(file) = files.get(name) {
+            if let Some(target) = &file.target {
+                symlink_dir_all(target, &file.dest, force, file.recursive).map_err(|err| {
+                    format!("something went wrong while symlinking {name}:\n    {err}")
+                })?;
+            }
+        } else {
+            return Err(format!("could not find {}", &name).into());
+        }
+    } else {
+        for (name, file) in files.iter() {
+            if let Some(target) = &file.target {
+                symlink_dir_all(target, &file.dest, force, file.recursive).map_err(|err| {
+                    format!("something went wrong while symlinking {name}:\n    {err}")
+                })?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn exec_generate_command(
+    name: &Option<String>,
+    manifest: &Manifest,
+    config: &mut VarMap,
+    template_engine: &mut upon::Engine,
+) -> error::Result<()> {
+    if let Some(name) = name {
+        if let Some(file) = manifest.files.get(name) {
+            if let Some(template) = &file.template {
+                create_color_palette(&manifest.wallpaper, config, manifest)?;
+                generate_template(&file.dest, template, config, template_engine).map_err(
+                    |err| format!("something went wrong while generating {name}:\n    {err}"),
+                )?;
+            }
+        } else {
+            return Err(format!("could not find {}", &name).into());
+        }
+    } else {
+        create_color_palette(&manifest.wallpaper, config, manifest)?;
+        for (name, file) in manifest.files.iter() {
+            if let Some(template) = &file.template {
+                generate_template(&file.dest, template, config, template_engine).map_err(
+                    |err| format!("something went wrong while generating {name}:\n    {err}"),
+                )?;
             }
         }
     }
