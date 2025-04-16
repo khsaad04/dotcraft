@@ -22,7 +22,7 @@ struct Manifest {
 
 #[derive(Debug, Deserialize)]
 struct File {
-    target: PathBuf,
+    target: Option<PathBuf>,
     dest: PathBuf,
     template: Option<PathBuf>,
     #[serde(default = "default_recursive_option")]
@@ -108,9 +108,13 @@ fn exec_subcommand() -> error::Result<()> {
         cli::SubCommand::Sync { force, name } => {
             if let Some(name) = name {
                 if let Some(file) = manifest.files.get(&name) {
-                    symlink_dir_all(&file.target, &file.dest, force, file.recursive).map_err(
-                        |err| format!("something went wrong while symlinking {name}:\n    {err}"),
-                    )?;
+                    if let Some(target) = &file.target {
+                        symlink_dir_all(target, &file.dest, force, file.recursive).map_err(
+                            |err| {
+                                format!("something went wrong while symlinking {name}:\n    {err}")
+                            },
+                        )?;
+                    }
                     if let Some(template) = &file.template {
                         create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
                         generate_template(&file.dest, template, &config, &mut template_engine)
@@ -124,9 +128,13 @@ fn exec_subcommand() -> error::Result<()> {
             } else {
                 create_color_palette(&manifest.wallpaper, &mut config, &manifest)?;
                 for (name, file) in manifest.files.iter() {
-                    symlink_dir_all(&file.target, &file.dest, force, file.recursive).map_err(
-                        |err| format!("something went wrong while symlinking {name}:\n    {err}"),
-                    )?;
+                    if let Some(target) = &file.target {
+                        symlink_dir_all(target, &file.dest, force, file.recursive).map_err(
+                            |err| {
+                                format!("something went wrong while symlinking {name}:\n    {err}")
+                            },
+                        )?;
+                    }
                     if let Some(template) = &file.template {
                         generate_template(&file.dest, template, &config, &mut template_engine)
                             .map_err(|err| {
@@ -139,17 +147,25 @@ fn exec_subcommand() -> error::Result<()> {
         cli::SubCommand::Link { force, name } => {
             if let Some(name) = name {
                 if let Some(file) = manifest.files.get(&name) {
-                    symlink_dir_all(&file.target, &file.dest, force, file.recursive).map_err(
-                        |err| format!("something went wrong while symlinking {name}:\n    {err}"),
-                    )?;
+                    if let Some(target) = &file.target {
+                        symlink_dir_all(target, &file.dest, force, file.recursive).map_err(
+                            |err| {
+                                format!("something went wrong while symlinking {name}:\n    {err}")
+                            },
+                        )?;
+                    }
                 } else {
                     return Err(format!("could not find {}", &name).into());
                 }
             } else {
                 for (name, file) in manifest.files.iter() {
-                    symlink_dir_all(&file.target, &file.dest, force, file.recursive).map_err(
-                        |err| format!("something went wrong while symlinking {name}:\n    {err}"),
-                    )?;
+                    if let Some(target) = &file.target {
+                        symlink_dir_all(target, &file.dest, force, file.recursive).map_err(
+                            |err| {
+                                format!("something went wrong while symlinking {name}:\n    {err}")
+                            },
+                        )?;
+                    }
                 }
             }
         }
