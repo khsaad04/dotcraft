@@ -17,6 +17,8 @@ struct Manifest {
     wallpaper: Option<PathBuf>,
     #[serde(default = "default_theme_option")]
     theme: String,
+    #[serde(default = "default_variant_option")]
+    variant: String,
     files: IndexMap<String, File>,
 }
 
@@ -33,6 +35,10 @@ type VarMap = HashMap<String, String>;
 
 fn default_theme_option() -> String {
     "dark".to_string()
+}
+
+fn default_variant_option() -> String {
+    "tonal_spot".to_string()
 }
 
 fn default_recursive_option() -> bool {
@@ -186,7 +192,7 @@ fn create_color_palette(
             .canonicalize()
             .map_err(|err| format!("could not find {}: {err}", wallpaper.display()))?;
         config.insert("wallpaper".to_string(), wp_path.display().to_string());
-        colors::generate_material_colors(&wp_path, &manifest.theme, config)?;
+        colors::generate_material_colors(&wp_path, &manifest.theme, &manifest.variant, config)?;
     } else if has_templates(manifest) {
         return Err("could not generate color palette: wallpaper is not set.".into());
     } else {

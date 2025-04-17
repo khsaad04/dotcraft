@@ -3,30 +3,59 @@ use crate::VarMap;
 
 use material_colors::{
     color::Argb,
+    dynamic_color::Variant,
     image::{FilterType, ImageReader},
     theme::ThemeBuilder,
 };
 use std::{collections::HashMap, path::Path};
 
-pub fn generate_material_colors(wp_path: &Path, theme: &str, config: &mut VarMap) -> Result<()> {
+pub fn generate_material_colors(
+    wp_path: &Path,
+    theme: &str,
+    variant: &str,
+    config: &mut VarMap,
+) -> Result<()> {
     let mut image = ImageReader::open(wp_path)
         .map_err(|err| format!("could not read image {}: {err}", wp_path.display()))?;
     image.resize(128, 128, FilterType::Lanczos3);
-    let color_palette = ThemeBuilder::with_source(ImageReader::extract_color(&image)).build();
+
+    let variant = match variant {
+        "monochrome" => Variant::Monochrome,
+        "neutral" => Variant::Neutral,
+        "tonal_spot" => Variant::TonalSpot,
+        "vibrant" => Variant::Vibrant,
+        "expressive" => Variant::Expressive,
+        "fidelity" => Variant::Fidelity,
+        "content" => Variant::Content,
+        "rainbow" => Variant::Rainbow,
+        "fruit_salad" => Variant::FruitSalad,
+        _ => return Err(format!("invalid variant {variant}\nPossible values: \"monochrome\", \"neutral\", \"tonal_spot\", \"vibrant\", \"expressive\", \"fidelity\", \"content\", \"rainbow\", \"fruit_salad\"").into()),
+    };
+
+    let color_palette = ThemeBuilder::with_source(ImageReader::extract_color(&image))
+        .variant(variant)
+        .build();
 
     config.insert("source_color".to_string(), color_palette.source.to_hex());
 
-    if theme == "dark" {
-        for (k, v) in color_palette.schemes.dark.into_iter() {
-            config.insert(k, v.to_hex());
+    match theme {
+        "dark" => {
+            for (k, v) in color_palette.schemes.dark.into_iter() {
+                config.insert(k, v.to_hex());
+            }
         }
-    } else if theme == "light" {
-        for (k, v) in color_palette.schemes.light.into_iter() {
-            config.insert(k, v.to_hex());
+        "light" => {
+            for (k, v) in color_palette.schemes.light.into_iter() {
+                config.insert(k, v.to_hex());
+            }
         }
-    } else {
-        return Err(format!("invalid theme {theme}").into());
+        _ => {
+            return Err(
+                format!("invalid theme {theme}\nPossible values: \"dark\", \"light\"").into(),
+            )
+        }
     }
+
     generate_base16_colors(config, &color_palette.source);
     config.insert("theme".to_string(), theme.to_string());
     Ok(())
