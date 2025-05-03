@@ -210,6 +210,7 @@ checksum = "43da5946c66ffcc7745f48db692ffbb10a83bfe0afd96235c5c2a4fb23994929"
 name = "dotcraft"
 version = "0.1.0"
 dependencies = [
+ "flagge",
  "indexmap",
  "material-colors",
  "serde",
@@ -252,6 +253,11 @@ checksum = "1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c"
 dependencies = [
  "simd-adler32",
 ]
+
+[[package]]
+name = "flagge"
+version = "0.1.0"
+source = "git+https://github.com/khsaad04/flagge.git#67b734788841301543532380304e3704aabac00e"
 
 [[package]]
 name = "flate2"

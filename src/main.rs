@@ -191,7 +191,9 @@ fn create_context_map(context: &mut ContextMap, manifest: &Manifest) -> error::R
         context.insert("wallpaper".to_string(), wp_path.display().to_string());
         colors::generate_material_colors(&wp_path, &manifest.theme, &manifest.variant, context)?;
     } else if has_templates(manifest) {
-        return Err("could not generate color palette: wallpaper is not set.".into());
+        return Err("could not generate color palette: wallpaper is not set."
+            .to_string()
+            .into());
     } else {
         log!(Warning, "Skipping color scheme generation.");
     }

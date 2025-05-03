@@ -1,6 +1,7 @@
 use crate::error;
 
-use std::env;
+use flagge::Lexer;
+use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::process::exit;
 
@@ -51,108 +52,110 @@ Options:
 
 impl Cli {
     pub fn try_parse() -> error::Result<Self> {
-        let mut manifest_path = "./Manifest.toml".to_string();
+        let mut manifest_path = PathBuf::from("Manifest.toml");
         let mut subcommand: Option<SubCommand> = None;
 
-        let mut args = env::args();
-        let _program_name = args.next();
-
-        while let Some(arg) = args.next() {
-            if arg.starts_with('-') {
-                match arg.as_str() {
-                    "-h" | "--help" => {
-                        println!("Dotfiles manager for unix-like operating systems\n{USAGE}");
-                        exit(0);
-                    }
-                    "-m" | "--manifest" => {
-                        if let Some(path) = args.next() {
-                            manifest_path = path;
-                        } else {
-                            return Err(format!("missing required argument: FILE.\n{USAGE}").into());
-                        }
-                    }
-                    _ => return Err(format!("invalid option {arg}.\n{USAGE}").into()),
+        let mut lexer = Lexer::from_env();
+        while let Some(arg) = lexer.next_token()? {
+            use flagge::Token::*;
+            match arg {
+                ShortFlag('h') | LongFlag("help") => {
+                    println!("Dotfiles manager for unix-like operating systems\n{USAGE}");
+                    exit(0);
                 }
-            } else {
-                match arg.as_str() {
-                    "sync" => {
+                ShortFlag('m') | LongFlag("manifest") => {
+                    if let Some(path) = lexer.get_value() {
+                        manifest_path = path.into();
+                    } else {
+                        return Err(format!("missing required argument: FILE\n{USAGE}").into());
+                    }
+                }
+                Value(ref val) => match val.as_os_str().as_bytes() {
+                    b"sync" => {
+                        dbg!("SYNCING");
                         let mut force = false;
                         let mut name: Option<String> = None;
-                        for arg in args.by_ref() {
-                            if arg.starts_with('-') {
-                                match arg.as_str() {
-                                    "-h" | "--help" => {
-                                        println!(
-                                            "Symlink files and generate templates\n{SYNC_USAGE}"
-                                        );
-                                        exit(0);
-                                    }
-                                    "-f" | "--force" => force = true,
-                                    _ => {
-                                        return Err(
-                                            format!("invalid option {arg}.\n{SYNC_USAGE}").into()
-                                        )
-                                    }
+                        while let Some(arg) = lexer.next_token()? {
+                            match arg {
+                                ShortFlag('h') | LongFlag("help") => {
+                                    println!("Symlink files and generate templates\n{SYNC_USAGE}");
+                                    exit(0);
                                 }
-                            } else {
-                                name = Some(arg);
+                                ShortFlag('f') | LongFlag("force") => force = true,
+                                Value(val) => {
+                                    name = Some(val.into_string().map_err(|err| {
+                                        format!(
+                                            "Unexpected argument in {}",
+                                            String::from_utf8_lossy(err.as_os_str().as_bytes())
+                                        )
+                                    })?)
+                                }
+                                _ => {
+                                    return Err(format!("invalid option {arg}\n{SYNC_USAGE}").into())
+                                }
                             }
                         }
                         subcommand = Some(SubCommand::Sync { force, name });
                     }
-                    "link" => {
+                    b"link" => {
                         let mut force = false;
                         let mut name: Option<String> = None;
-                        for arg in args.by_ref() {
-                            if arg.starts_with('-') {
-                                match arg.as_str() {
-                                    "-h" | "--help" => {
-                                        println!("Symlink files\n{LINK_USAGE}");
-                                        exit(0);
-                                    }
-                                    "-f" | "--force" => force = true,
-                                    _ => {
-                                        return Err(
-                                            format!("invalid option {arg}.\n{LINK_USAGE}").into()
-                                        )
-                                    }
+                        while let Some(arg) = lexer.next_token()? {
+                            match arg {
+                                ShortFlag('h') | LongFlag("help") => {
+                                    println!("Symlink files\n{LINK_USAGE}");
+                                    exit(0);
                                 }
-                            } else {
-                                name = Some(arg);
+                                ShortFlag('f') | LongFlag("force") => force = true,
+                                Value(val) => {
+                                    name = Some(val.into_string().map_err(|err| {
+                                        format!(
+                                            "Unexpected argument in {}",
+                                            String::from_utf8_lossy(err.as_os_str().as_bytes())
+                                        )
+                                    })?)
+                                }
+                                _ => {
+                                    return Err(format!("invalid option {arg}\n{LINK_USAGE}").into())
+                                }
                             }
                         }
                         subcommand = Some(SubCommand::Link { force, name });
                     }
-                    "generate" => {
+                    b"generate" => {
                         let mut name: Option<String> = None;
-                        for arg in args.by_ref() {
-                            if arg.starts_with('-') {
-                                match arg.as_str() {
-                                    "-h" | "--help" => {
-                                        println!("Generate templates\n{GENERATE_USAGE}");
-                                        exit(0);
-                                    }
-                                    _ => {
-                                        return Err(format!(
-                                            "invalid option {arg}.\n{GENERATE_USAGE}"
-                                        )
-                                        .into())
-                                    }
+                        while let Some(arg) = lexer.next_token()? {
+                            match arg {
+                                ShortFlag('h') | LongFlag("help") => {
+                                    println!("Generate templates\n{GENERATE_USAGE}");
+                                    exit(0);
                                 }
-                            } else {
-                                name = Some(arg);
+                                Value(val) => {
+                                    name = Some(val.into_string().map_err(|err| {
+                                        format!(
+                                            "Unexpected argument in {}",
+                                            String::from_utf8_lossy(err.as_os_str().as_bytes())
+                                        )
+                                    })?)
+                                }
+                                _ => {
+                                    return Err(
+                                        format!("invalid option {arg}\n{GENERATE_USAGE}").into()
+                                    )
+                                }
                             }
                         }
                         subcommand = Some(SubCommand::Generate { name });
                     }
-                    _ => return Err(format!("invalid subcommand {arg}.\n{USAGE}").into()),
-                }
+                    _ => return Err(format!("invalid subcommand {arg}\n{USAGE}").into()),
+                },
+                _ => return Err(format!("invalid argument {arg}\n{USAGE}").into()),
             }
         }
 
         if let Some(subcommand) = subcommand {
             Ok(Cli {
-                manifest_path: manifest_path.into(),
+                manifest_path,
                 subcommand,
             })
         } else {

@@ -1,5 +1,3 @@
-use std::io;
-
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub struct Error {
@@ -18,18 +16,18 @@ impl From<String> for Error {
     }
 }
 
-impl From<&str> for Error {
-    fn from(value: &str) -> Self {
+impl From<std::io::Error> for Error {
+    fn from(value: std::io::Error) -> Self {
         Self {
             ctx: value.to_string(),
         }
     }
 }
 
-impl From<io::Error> for Error {
-    fn from(value: io::Error) -> Self {
+impl From<flagge::Error> for Error {
+    fn from(value: flagge::Error) -> Self {
         Self {
-            ctx: format!("{value}"),
+            ctx: value.to_string(),
         }
     }
 }
