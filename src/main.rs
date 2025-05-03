@@ -19,6 +19,7 @@ struct Manifest {
     theme: String,
     #[serde(default = "default_variant_option")]
     variant: String,
+    variables: Option<HashMap<String, String>>,
     files: IndexMap<String, File>,
 }
 
@@ -31,7 +32,7 @@ struct File {
     recursive: bool,
 }
 
-type VarMap = HashMap<String, String>;
+type ContextMap = HashMap<String, String>;
 
 fn default_theme_option() -> String {
     "dark".to_string()
@@ -104,7 +105,7 @@ fn main() {
 fn entrypoint() -> error::Result<()> {
     let args = cli::Cli::try_parse()?;
 
-    let mut config: VarMap = HashMap::new();
+    let mut context: ContextMap = HashMap::new();
     let manifest = Manifest::try_from(args.manifest_path.as_path())?;
 
     let mut template_engine = upon::Engine::new();
@@ -113,13 +114,13 @@ fn entrypoint() -> error::Result<()> {
     match args.subcommand {
         cli::SubCommand::Sync { force, name } => {
             exec_symlink_command(&name, force, &manifest.files)?;
-            exec_generate_command(&name, &manifest, &mut config, &mut template_engine)?;
+            exec_generate_command(&name, &manifest, &mut context, &mut template_engine)?;
         }
         cli::SubCommand::Link { force, name } => {
             exec_symlink_command(&name, force, &manifest.files)?;
         }
         cli::SubCommand::Generate { name } => {
-            exec_generate_command(&name, &manifest, &mut config, &mut template_engine)?;
+            exec_generate_command(&name, &manifest, &mut context, &mut template_engine)?;
         }
     }
     Ok(())
@@ -155,14 +156,14 @@ fn exec_symlink_command(
 fn exec_generate_command(
     name: &Option<String>,
     manifest: &Manifest,
-    config: &mut VarMap,
+    context: &mut ContextMap,
     template_engine: &mut upon::Engine,
 ) -> error::Result<()> {
     if let Some(name) = name {
         if let Some(file) = manifest.files.get(name) {
             if let Some(template) = &file.template {
-                create_color_palette(&manifest.wallpaper, config, manifest)?;
-                generate_template(&file.dest, template, config, template_engine).map_err(
+                create_context_map(context, manifest)?;
+                generate_template(&file.dest, template, context, template_engine).map_err(
                     |err| format!("something went wrong while generating {name}:\n    {err}"),
                 )?;
             }
@@ -170,10 +171,10 @@ fn exec_generate_command(
             return Err(format!("could not find {}", &name).into());
         }
     } else {
-        create_color_palette(&manifest.wallpaper, config, manifest)?;
+        create_context_map(context, manifest)?;
         for (name, file) in manifest.files.iter() {
             if let Some(template) = &file.template {
-                generate_template(&file.dest, template, config, template_engine).map_err(
+                generate_template(&file.dest, template, context, template_engine).map_err(
                     |err| format!("something went wrong while generating {name}:\n    {err}"),
                 )?;
             }
@@ -182,21 +183,23 @@ fn exec_generate_command(
     Ok(())
 }
 
-fn create_color_palette(
-    path: &Option<PathBuf>,
-    config: &mut VarMap,
-    manifest: &Manifest,
-) -> error::Result<()> {
-    if let Some(wallpaper) = path {
+fn create_context_map(context: &mut ContextMap, manifest: &Manifest) -> error::Result<()> {
+    if let Some(wallpaper) = &manifest.wallpaper {
         let wp_path = wallpaper
             .canonicalize()
             .map_err(|err| format!("could not find {}: {err}", wallpaper.display()))?;
-        config.insert("wallpaper".to_string(), wp_path.display().to_string());
-        colors::generate_material_colors(&wp_path, &manifest.theme, &manifest.variant, config)?;
+        context.insert("wallpaper".to_string(), wp_path.display().to_string());
+        colors::generate_material_colors(&wp_path, &manifest.theme, &manifest.variant, context)?;
     } else if has_templates(manifest) {
         return Err("could not generate color palette: wallpaper is not set.".into());
     } else {
         log!(Warning, "Skipping color scheme generation.");
+    }
+
+    if let Some(vars) = &manifest.variables {
+        for (k, v) in vars {
+            context.insert(k.to_string(), v.to_string());
+        }
     }
     Ok(())
 }
@@ -336,7 +339,7 @@ fn symlink_file(
 fn generate_template(
     dest: impl AsRef<Path>,
     template: impl AsRef<Path>,
-    config: &VarMap,
+    context: &ContextMap,
     template_engine: &mut upon::Engine,
 ) -> error::Result<()> {
     let template = resolve_home_dir(template.as_ref())?
@@ -350,7 +353,7 @@ fn generate_template(
     let rendered = template_engine
         .compile(&data)
         .map_err(|err| format!("could not compile template {}: {err}", template.display()))?
-        .render(template_engine, config)
+        .render(template_engine, context)
         .to_string()
         .map_err(|err| format!("could not render template {}: {err}", template.display()))?;
 

@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::VarMap;
+use crate::ContextMap;
 
 use material_colors::{
     color::Argb,
@@ -13,7 +13,7 @@ pub fn generate_material_colors(
     wp_path: &Path,
     theme: &str,
     variant: &str,
-    config: &mut VarMap,
+    context: &mut ContextMap,
 ) -> Result<()> {
     let mut image = ImageReader::open(wp_path)
         .map_err(|err| format!("could not read image {}: {err}", wp_path.display()))?;
@@ -36,17 +36,17 @@ pub fn generate_material_colors(
         .variant(variant)
         .build();
 
-    config.insert("source_color".to_string(), color_palette.source.to_hex());
+    context.insert("source_color".to_string(), color_palette.source.to_hex());
 
     match theme {
         "dark" => {
             for (k, v) in color_palette.schemes.dark.into_iter() {
-                config.insert(k, v.to_hex());
+                context.insert(k, v.to_hex());
             }
         }
         "light" => {
             for (k, v) in color_palette.schemes.light.into_iter() {
-                config.insert(k, v.to_hex());
+                context.insert(k, v.to_hex());
             }
         }
         _ => {
@@ -56,8 +56,8 @@ pub fn generate_material_colors(
         }
     }
 
-    generate_base16_colors(config, &color_palette.source);
-    config.insert("theme".to_string(), theme.to_string());
+    generate_base16_colors(context, &color_palette.source);
+    context.insert("theme".to_string(), theme.to_string());
     Ok(())
 }
 
