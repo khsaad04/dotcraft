@@ -17,7 +17,7 @@ pub fn generate_material_colors(
 ) -> Result<()> {
     let mut image = ImageReader::open(wp_path)
         .map_err(|err| format!("could not read image {}: {err}", wp_path.display()))?;
-    image.resize(128, 128, FilterType::Lanczos3);
+    image.resize(128, 128, FilterType::Nearest);
 
     let variant = match variant {
         "monochrome" => Variant::Monochrome,
