@@ -72,7 +72,6 @@ impl Cli {
                 }
                 Value(ref val) => match val.as_os_str().as_bytes() {
                     b"sync" => {
-                        dbg!("SYNCING");
                         let mut force = false;
                         let mut name: Option<String> = None;
                         while let Some(arg) = lexer.next_token()? {
