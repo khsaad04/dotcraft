@@ -9,7 +9,7 @@ use std::{
     fs, io,
     os::unix::fs::symlink,
     path::{Component, Path, PathBuf},
-    process::exit,
+    process::{exit, Command},
 };
 
 #[derive(Debug, Deserialize)]
@@ -30,6 +30,8 @@ struct File {
     template: Option<PathBuf>,
     #[serde(default = "default_recursive_option")]
     recursive: bool,
+    pre_hooks: Option<Vec<String>>,
+    post_hooks: Option<Vec<String>>,
 }
 
 type ContextMap = HashMap<String, String>;
@@ -109,18 +111,50 @@ fn entrypoint() -> error::Result<()> {
     let manifest = Manifest::try_from(args.manifest_path.as_path())?;
 
     let mut template_engine = upon::Engine::new();
-    template_engine.add_filter("is_equal", |s: &str, other: &str| -> bool { s == other });
+    template_engine.add_function("is_equal", |s: &str, other: &str| -> bool { s == other });
 
     match args.subcommand {
         cli::SubCommand::Sync { force, name } => {
+            execute_pre_hooks(&manifest.files)?;
             exec_symlink_command(&name, force, &manifest.files)?;
             exec_generate_command(&name, &manifest, &mut context, &mut template_engine)?;
+            execute_post_hooks(&manifest.files)?;
         }
         cli::SubCommand::Link { force, name } => {
             exec_symlink_command(&name, force, &manifest.files)?;
         }
         cli::SubCommand::Generate { name } => {
             exec_generate_command(&name, &manifest, &mut context, &mut template_engine)?;
+        }
+    }
+    Ok(())
+}
+
+fn execute_pre_hooks(files: &IndexMap<String, File>) -> error::Result<()> {
+    for (_, file) in files.iter() {
+        if let Some(hook) = &file.pre_hooks {
+            for cmd in hook.iter() {
+                let mut cmd_iter = cmd.split_whitespace();
+                Command::new(cmd_iter.next().unwrap())
+                    .args(cmd_iter)
+                    .output()?;
+                log!(Info, "Executed pre hook: {}", cmd);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn execute_post_hooks(files: &IndexMap<String, File>) -> error::Result<()> {
+    for (_, file) in files.iter() {
+        if let Some(hook) = &file.post_hooks {
+            for cmd in hook.iter() {
+                let mut cmd_iter = cmd.split_whitespace();
+                Command::new(cmd_iter.next().unwrap())
+                    .args(cmd_iter)
+                    .output()?;
+                log!(Info, "Executed post hook: {}", cmd);
+            }
         }
     }
     Ok(())
