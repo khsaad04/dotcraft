@@ -1,11 +1,13 @@
-wallpaper = "/path/to/wp.jpg" # Required for templates
-theme = "dark" # Optional. Whether to use dark or light theme
+wallpaper = "/path/to/wallpaper.jpg" # Required only if using templates
+
+# Material colors configs
+theme   = "light"   # ["dark", "light"] default: "dark"
+variant = "neutral" # ["monochrome", "neutral", "tonal_spot", "vibrant", "expressive", "fidelity", "content", "rainbow", "fruit_salad"] default: "tonal_spot"
+
+# Custom Variables & Override generated colors
+[variables]
+custom_var = "value"
+base00     = "181818" # override generated base00 color
 
 [files]
-test = {target = "test", dest = "~/dest/", template = "temp"}
-test2 = {target = "test2", dest = "~/dest/name"}
-
-# `temp` is generated into `test`
-# `test` is symlinked to `~/dest/test`
-
-# `test2` is symlinked to `~/dest/name`
+config_name = { target = "source/path", dest = "~/.config/target", template = "foo.template" }
