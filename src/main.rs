@@ -138,7 +138,7 @@ fn execute_pre_hooks(files: &IndexMap<String, File>) -> error::Result<()> {
                 Command::new(cmd_iter.next().unwrap())
                     .args(cmd_iter)
                     .output()?;
-                log!(Info, "Executed pre hook: {}", cmd);
+                log!(Info, "Pre-hook executed: {}", cmd);
             }
         }
     }
@@ -153,7 +153,7 @@ fn execute_post_hooks(files: &IndexMap<String, File>) -> error::Result<()> {
                 Command::new(cmd_iter.next().unwrap())
                     .args(cmd_iter)
                     .output()?;
-                log!(Info, "Executed post hook: {}", cmd);
+                log!(Info, "Post-hook executed: {}", cmd);
             }
         }
     }
@@ -292,6 +292,7 @@ fn symlink_dir_all(
                 fs::create_dir_all(dest_parent_dir).map_err(|err| {
                     format!("could not create dir {}: {err}", dest_parent_dir.display())
                 })?;
+                log!(Info, "Created dir: {}", dest_parent_dir.display());
             }
             symlink_dir_all(entry.path(), dest, force, recursive)?;
         }
@@ -311,7 +312,7 @@ fn symlink_file(
 
     match symlink(target, dest) {
         Ok(()) => {
-            log!(Info, "Symlinked {} to {}", target.display(), dest.display());
+            log!(Info, "Symlinked {} -> {}", target.display(), dest.display());
         }
         Err(err) => match err.kind() {
             io::ErrorKind::AlreadyExists => {
@@ -325,7 +326,7 @@ fn symlink_file(
                         format!("could not remove file {}: {err}", dest.display())
                     })?;
                     symlink(target, dest)?;
-                    log!(Info, "Symlinked {} to {}", target.display(), dest.display());
+                    log!(Info, "Symlinked {} -> {}", target.display(), dest.display());
                 } else if dest.is_symlink() {
                     if !dest.exists() {
                         log!(
@@ -337,11 +338,11 @@ fn symlink_file(
                             format!("could not remove file {}: {err}", dest.display())
                         })?;
                         symlink(target, dest)?;
-                        log!(Info, "Symlinked {} to {}", target.display(), dest.display());
+                        log!(Info, "Symlinked {} -> {}", target.display(), dest.display());
                     } else {
                         let symlink_origin = dest.canonicalize()?;
                         if target.canonicalize()? == symlink_origin {
-                            log!(Info, "Skipped symlinking {}. Up to date.", dest.display());
+                            log!(Info, "Symlink up-to-date: {}", dest.display());
                         } else {
                             log!(
                                 Warning,
@@ -395,6 +396,6 @@ fn generate_template(
 
     fs::write(&dest, rendered)
         .map_err(|err| format!("could not write to {}: {err}", dest.display()))?;
-    log!(Info, "Generated template {}", template.display());
+    log!(Info, "Template generated: {}", template.display());
     Ok(())
 }
