@@ -1,12 +1,8 @@
 use crate::error::Result;
 use crate::ContextMap;
 
-use material_colors::{
-    color::Argb,
-    dynamic_color::Variant,
-    image::{FilterType, ImageReader},
-    theme::ThemeBuilder,
-};
+use material_colors::{color::Argb, dynamic_color::Variant, theme::ThemeBuilder};
+use quantette::{image, PalettePipeline};
 use std::{collections::HashMap, path::Path};
 
 pub fn generate_material_colors(
@@ -15,9 +11,15 @@ pub fn generate_material_colors(
     variant: &str,
     context: &mut ContextMap,
 ) -> Result<()> {
-    let mut image = ImageReader::open(wp_path)
-        .map_err(|err| format!("could not read image {}: {err}", wp_path.display()))?;
-    image.resize(128, 128, FilterType::Lanczos3);
+    let img = image::open(wp_path).unwrap().into_rgb8();
+    let mut pipeline = PalettePipeline::try_from(&img).unwrap();
+    let quantized_palette = pipeline.palette_size(1).palette_par();
+    let color = Argb::new(
+        255,
+        quantized_palette[0].red,
+        quantized_palette[0].green,
+        quantized_palette[0].blue,
+    );
 
     let variant = match variant {
         "monochrome" => Variant::Monochrome,
@@ -32,9 +34,7 @@ pub fn generate_material_colors(
         _ => return Err(format!("invalid variant {variant}\nPossible values: \"monochrome\", \"neutral\", \"tonal_spot\", \"vibrant\", \"expressive\", \"fidelity\", \"content\", \"rainbow\", \"fruit_salad\"").into()),
     };
 
-    let color_palette = ThemeBuilder::with_source(ImageReader::extract_color(&image))
-        .variant(variant)
-        .build();
+    let color_palette = ThemeBuilder::with_source(color).variant(variant).build();
 
     context.insert("source_color".to_string(), color_palette.source.to_hex());
 
@@ -56,7 +56,7 @@ pub fn generate_material_colors(
         }
     }
 
-    generate_base16_colors(context, &color_palette.source);
+    generate_base16_colors(context, &color);
     context.insert("theme".to_string(), theme.to_string());
     Ok(())
 }
@@ -86,9 +86,9 @@ pub fn generate_base16_colors(config: &mut HashMap<String, String>, source_color
     }
 }
 
-fn blend_color(first: &Argb, second: &Argb) -> Argb {
-    let r = (first.red as f32 * 0.5 + second.red as f32 * 0.5) as u8;
-    let g = (first.green as f32 * 0.5 + second.green as f32 * 0.5) as u8;
-    let b = (first.blue as f32 * 0.5 + second.blue as f32 * 0.5) as u8;
+fn blend_color(a: &Argb, b: &Argb) -> Argb {
+    let r = a.red / 2 + b.red / 2;
+    let g = a.green / 2 + b.green / 2;
+    let b = a.blue / 2 + b.blue / 2;
     Argb::new(255, r, g, b)
 }
