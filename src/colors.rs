@@ -11,8 +11,15 @@ pub fn generate_material_colors(
     variant: &str,
     context: &mut ContextMap,
 ) -> Result<()> {
-    let img = image::open(wp_path).unwrap().into_rgb8();
-    let mut pipeline = PalettePipeline::try_from(&img).unwrap();
+    let img = image::open(wp_path)
+        .map_err(|err| format!("Could not load image {}: {err}", wp_path.display()))?
+        .into_rgb8();
+    let mut pipeline = PalettePipeline::try_from(&img).map_err(|err| {
+        format!(
+            "Could not color quantize image {}: {err}",
+            wp_path.display()
+        )
+    })?;
     let quantized_palette = pipeline.palette_size(1).palette_par();
     let color = Argb::new(
         255,

@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 flagge = { git = "https://github.com/khsaad04/flagge.git", version = "*" }
 indexmap = { version = "2.10.0", features = ["serde"] }
-material-colors = "0.4.2"
+material-colors = { version = "0.4.2", features = ["image"] }
 quantette = "0.3.0"
 serde = { version = "1.0.219", features = ["derive"] }
 toml = "0.9.5"
