@@ -1,6 +1,5 @@
 mod cli;
 mod colors;
-mod error;
 
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -24,6 +23,14 @@ struct Manifest {
     files: IndexMap<String, File>,
 }
 
+fn default_theme_option() -> String {
+    "dark".to_string()
+}
+
+fn default_variant_option() -> String {
+    "tonal_spot".to_string()
+}
+
 #[derive(Debug, Deserialize)]
 struct File {
     target: Option<PathBuf>,
@@ -35,22 +42,12 @@ struct File {
     post_hooks: Option<Vec<String>>,
 }
 
-type ContextMap = HashMap<String, String>;
-
-fn default_theme_option() -> String {
-    "dark".to_string()
-}
-
-fn default_variant_option() -> String {
-    "tonal_spot".to_string()
-}
-
 fn default_recursive_option() -> bool {
     false
 }
 
 impl TryFrom<&Path> for Manifest {
-    type Error = error::Error;
+    type Error = Error;
     fn try_from(value: &Path) -> std::result::Result<Self, Self::Error> {
         let path = value
             .canonicalize()
@@ -70,6 +67,42 @@ impl TryFrom<&Path> for Manifest {
         )
         .map_err(|err| format!("could not parse toml {}: {err}", path.display()))?;
         Ok(manifest)
+    }
+}
+
+type ContextMap = HashMap<String, String>;
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+pub struct Error {
+    ctx: String,
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.ctx)
+    }
+}
+
+impl From<String> for Error {
+    fn from(value: String) -> Self {
+        Self { ctx: value }
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(value: std::io::Error) -> Self {
+        Self {
+            ctx: value.to_string(),
+        }
+    }
+}
+
+impl From<flagge::Error> for Error {
+    fn from(value: flagge::Error) -> Self {
+        Self {
+            ctx: value.to_string(),
+        }
     }
 }
 
@@ -105,7 +138,7 @@ fn main() {
     }
 }
 
-fn entrypoint() -> error::Result<()> {
+fn entrypoint() -> Result<()> {
     let args = cli::Cli::try_parse()?;
 
     let mut context: ContextMap = HashMap::new();
@@ -234,7 +267,7 @@ fn entrypoint() -> error::Result<()> {
     Ok(())
 }
 
-fn execute_hook(cmd: &str) -> error::Result<()> {
+fn execute_hook(cmd: &str) -> Result<()> {
     let mut cmd_iter = cmd.split_whitespace();
     let output = Command::new(cmd_iter.next().unwrap())
         .args(cmd_iter)
@@ -244,7 +277,7 @@ fn execute_hook(cmd: &str) -> error::Result<()> {
     Ok(())
 }
 
-fn create_context_map(context: &mut ContextMap, manifest: &Manifest) -> error::Result<()> {
+fn create_context_map(context: &mut ContextMap, manifest: &Manifest) -> Result<()> {
     if let Some(wallpaper) = &manifest.wallpaper {
         let wp_path = wallpaper
             .canonicalize()
@@ -276,7 +309,7 @@ fn has_templates(manifest: &Manifest) -> bool {
     false
 }
 
-fn resolve_home_dir(path: impl AsRef<Path>) -> error::Result<PathBuf> {
+fn resolve_home_dir(path: impl AsRef<Path>) -> Result<PathBuf> {
     let path = path.as_ref();
     let home_dir =
         std::env::var("HOME").map_err(|err| format!("could not find home directory: {err}"))?;
@@ -299,7 +332,7 @@ fn symlink_dir_all(
     dest: impl AsRef<Path>,
     force: bool,
     recursive: bool,
-) -> error::Result<()> {
+) -> Result<()> {
     let target = resolve_home_dir(&target)?
         .canonicalize()
         .map_err(|err| format!("could not find {}: {err}", target.as_ref().display()))?;
@@ -329,11 +362,7 @@ fn symlink_dir_all(
     Ok(())
 }
 
-fn symlink_file(
-    target: impl AsRef<Path>,
-    dest: impl AsRef<Path>,
-    force: bool,
-) -> error::Result<()> {
+fn symlink_file(target: impl AsRef<Path>, dest: impl AsRef<Path>, force: bool) -> Result<()> {
     let target = target.as_ref();
     let dest = dest.as_ref();
 
@@ -405,7 +434,7 @@ fn generate_template(
     template: impl AsRef<Path>,
     context: &ContextMap,
     template_engine: &mut upon::Engine,
-) -> error::Result<()> {
+) -> Result<()> {
     let template = resolve_home_dir(template.as_ref())?
         .canonicalize()
         .map_err(|err| format!("could not find {}: {err}", template.as_ref().display()))?;

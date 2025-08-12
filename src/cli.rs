@@ -1,4 +1,4 @@
-use crate::error;
+use crate::Result;
 
 use flagge::Lexer;
 use std::os::unix::ffi::OsStrExt;
@@ -51,7 +51,7 @@ Options:
     -h, --help  Print help";
 
 impl Cli {
-    pub fn try_parse() -> error::Result<Self> {
+    pub fn try_parse() -> Result<Self> {
         let mut manifest_path = PathBuf::from("Manifest.toml");
         let mut subcommand: Option<SubCommand> = None;
 

@@ -1,5 +1,4 @@
-use crate::error::Result;
-use crate::ContextMap;
+use crate::{ContextMap, Result};
 
 use material_colors::{color::Argb, dynamic_color::Variant, theme::ThemeBuilder};
 use quantette::{image, PalettePipeline};
