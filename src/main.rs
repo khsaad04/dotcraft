@@ -112,7 +112,6 @@ fn entrypoint() -> error::Result<()> {
     let manifest = Manifest::try_from(args.manifest_path.as_path())?;
 
     let mut template_engine = upon::Engine::new();
-    template_engine.add_function("is_equal", |s: &str, other: &str| -> bool { s == other });
 
     if let cli::SubCommand::Sync { force, ref name } = args.subcommand {
         if let Some(name) = name {
