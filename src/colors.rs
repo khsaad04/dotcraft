@@ -63,33 +63,34 @@ pub fn generate_material_colors(
         }
     }
 
-    generate_base16_colors(context, &color);
+    generate_terminal_ansi_colors(context, &color);
     context.insert("theme".to_string(), theme.to_string());
     Ok(())
 }
 
-pub fn generate_base16_colors(config: &mut HashMap<String, String>, source_color: &Argb) {
-    let base16: [(&str, &Argb); 16] = [
-        ("base0", &Argb::new(255, 0, 0, 0)),
-        ("base1", &Argb::new(255, 128, 0, 0)),
-        ("base2", &Argb::new(255, 0, 128, 0)),
-        ("base3", &Argb::new(255, 128, 128, 0)),
-        ("base4", &Argb::new(255, 0, 0, 128)),
-        ("base5", &Argb::new(255, 128, 0, 128)),
-        ("base6", &Argb::new(255, 0, 128, 128)),
-        ("base7", &Argb::new(255, 192, 192, 192)),
-        ("base8", &Argb::new(255, 128, 128, 128)),
-        ("base9", &Argb::new(255, 255, 0, 0)),
-        ("base10", &Argb::new(255, 0, 255, 0)),
-        ("base11", &Argb::new(255, 255, 255, 0)),
-        ("base12", &Argb::new(255, 0, 0, 255)),
-        ("base13", &Argb::new(255, 255, 0, 255)),
-        ("base14", &Argb::new(255, 0, 255, 255)),
-        ("base15", &Argb::new(255, 255, 255, 255)),
+fn generate_terminal_ansi_colors(config: &mut HashMap<String, String>, source_color: &Argb) {
+    // default 4-bit ansi colors used by xterm
+    let ansi16: [(&str, &Argb); 16] = [
+        ("black", &Argb::new(255, 0, 0, 0)),
+        ("red", &Argb::new(255, 205, 0, 0)),
+        ("green", &Argb::new(255, 0, 205, 0)),
+        ("yellow", &Argb::new(255, 205, 205, 0)),
+        ("blue", &Argb::new(255, 0, 0, 238)),
+        ("magenta", &Argb::new(255, 205, 0, 205)),
+        ("cyan", &Argb::new(255, 0, 205, 205)),
+        ("white", &Argb::new(255, 229, 229, 229)),
+        ("bright_black", &Argb::new(255, 127, 127, 127)),
+        ("bright_red", &Argb::new(255, 255, 0, 0)),
+        ("bright_green", &Argb::new(255, 0, 255, 0)),
+        ("bright_yellow", &Argb::new(255, 255, 255, 0)),
+        ("bright_blue", &Argb::new(255, 92, 92, 255)),
+        ("bright_magenta", &Argb::new(255, 255, 0, 255)),
+        ("bright_cyan", &Argb::new(255, 0, 255, 255)),
+        ("bright_white", &Argb::new(255, 255, 255, 255)),
     ];
-    for (name, value) in base16.into_iter() {
-        let new_color = blend_color(value, source_color);
-        config.insert(name.to_string(), new_color.to_hex());
+    for (name, value) in ansi16.into_iter() {
+        let blended_color = blend_color(value, source_color);
+        config.insert(name.to_string(), blended_color.to_hex());
     }
 }
 
