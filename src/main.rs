@@ -454,8 +454,21 @@ fn generate_template(
         .to_string()
         .map_err(|err| format!("could not render template {}: {err}", template.display()))?;
 
-    fs::write(&dest, rendered)
-        .map_err(|err| format!("could not write to {}: {err}", dest.display()))?;
+    if let Err(err) = fs::write(&dest, &rendered) {
+        match err.kind() {
+            io::ErrorKind::NotFound => {
+                fs::create_dir_all(
+                    dest.parent()
+                        .ok_or(format!("could not access parent dir of {}", dest.display()))?,
+                )?;
+                fs::write(&dest, &rendered)
+                    .map_err(|err| format!("could not write to {}: {err}", dest.display()))?;
+            }
+            _ => {
+                return Err(format!("could not write to {}: {err}", dest.display()).into());
+            }
+        }
+    }
     log!(Info, "Template generated: {}", template.display());
     Ok(())
 }
