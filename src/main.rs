@@ -1,7 +1,6 @@
 mod cli;
 mod colors;
 
-use indexmap::IndexMap;
 use serde::Deserialize;
 use std::{
     collections::HashMap,
@@ -20,7 +19,7 @@ struct Manifest {
     #[serde(default = "default_variant_option")]
     variant: String,
     variables: Option<HashMap<String, String>>,
-    files: IndexMap<String, File>,
+    files: HashMap<String, File>,
 }
 
 fn default_theme_option() -> String {

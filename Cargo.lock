@@ -242,7 +242,6 @@ version = "0.1.0"
 dependencies = [
  "flagge",
  "image",
- "indexmap",
  "material-colors",
  "quantette",
  "serde",
@@ -435,7 +434,6 @@ checksum = "fe4cd85333e22411419a0bcae1297d25e58c9443848b11dc6a86fefe8c78a661"
 dependencies = [
  "equivalent",
  "hashbrown",
- "serde",
 ]
 
 [[package]]
