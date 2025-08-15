@@ -269,9 +269,13 @@ fn entrypoint() -> Result<()> {
 
 fn execute_hook(cmd: &str) -> Result<()> {
     let mut cmd_iter = cmd.split_whitespace();
-    let output = Command::new(cmd_iter.next().unwrap())
-        .args(cmd_iter)
-        .output()?;
+    let output = Command::new(
+        cmd_iter
+            .next()
+            .ok_or("could not execute hook: No command provided".to_string())?,
+    )
+    .args(cmd_iter)
+    .output()?;
     io::stdout().write_all(&output.stdout)?;
     io::stderr().write_all(&output.stderr)?;
     Ok(())
