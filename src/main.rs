@@ -4,8 +4,7 @@ mod colors;
 use serde::Deserialize;
 use std::{
     collections::HashMap,
-    fs,
-    io::{self, Write},
+    fs, io,
     os::unix::fs::symlink,
     path::{Component, Path, PathBuf},
     process::{exit, Command},
@@ -268,15 +267,19 @@ fn entrypoint() -> Result<()> {
 
 fn execute_hook(cmd: &str) -> Result<()> {
     let mut cmd_iter = cmd.split_whitespace();
-    let output = Command::new(
+    // TODO: using .spawn() inherits file descriptors (stdout, stderr, ...) from
+    // the parent processs (dotcraft's process) which can mess up the order of
+    // I/O between these hooks and dotcraft log messages. Find a possible fix
+    // in the future. If there even is one that doesn't involve capturing the
+    // stdout and stderr using .output() and writing them sequentially instead
+    // of in the order they appeared.
+    Command::new(
         cmd_iter
             .next()
             .ok_or("could not execute hook: No command provided".to_string())?,
     )
     .args(cmd_iter)
-    .output()?;
-    io::stdout().write_all(&output.stdout)?;
-    io::stderr().write_all(&output.stderr)?;
+    .spawn()?;
     Ok(())
 }
 
