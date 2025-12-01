@@ -4,7 +4,8 @@ mod colors;
 use serde::Deserialize;
 use std::{
     collections::HashMap,
-    fs, io,
+    env, fmt, fs,
+    io::{self, Write},
     os::unix::fs::symlink,
     path::{Component, Path, PathBuf},
     process::{exit, Command},
@@ -53,7 +54,7 @@ impl TryFrom<&Path> for Manifest {
         let parent_dir = path
             .parent()
             .ok_or(format!("could not access parent dir of {}", path.display()))?;
-        std::env::set_current_dir(parent_dir).map_err(|err| {
+        env::set_current_dir(parent_dir).map_err(|err| {
             format!(
                 "could not change directory to {}: {err}",
                 parent_dir.display()
@@ -76,8 +77,8 @@ pub struct Error {
     ctx: String,
 }
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.ctx)
     }
 }
@@ -88,8 +89,8 @@ impl From<String> for Error {
     }
 }
 
-impl From<std::io::Error> for Error {
-    fn from(value: std::io::Error) -> Self {
+impl From<io::Error> for Error {
+    fn from(value: io::Error) -> Self {
         Self {
             ctx: value.to_string(),
         }
@@ -267,19 +268,15 @@ fn entrypoint() -> Result<()> {
 
 fn execute_hook(cmd: &str) -> Result<()> {
     let mut cmd_iter = cmd.split_whitespace();
-    // TODO: using .spawn() inherits file descriptors (stdout, stderr, ...) from
-    // the parent processs (dotcraft's process) which can mess up the order of
-    // I/O between these hooks and dotcraft log messages. Find a possible fix
-    // in the future. If there even is one that doesn't involve capturing the
-    // stdout and stderr using .output() and writing them sequentially instead
-    // of in the order they appeared.
-    Command::new(
+    let output = Command::new(
         cmd_iter
             .next()
             .ok_or("could not execute hook: No command provided".to_string())?,
     )
     .args(cmd_iter)
-    .spawn()?;
+    .output()?;
+    io::stdout().write_all(&output.stdout)?;
+    io::stderr().write_all(&output.stderr)?;
     Ok(())
 }
 
@@ -318,7 +315,7 @@ fn has_templates(manifest: &Manifest) -> bool {
 fn resolve_home_dir(path: impl AsRef<Path>) -> Result<PathBuf> {
     let path = path.as_ref();
     let home_dir =
-        std::env::var("HOME").map_err(|err| format!("could not find home directory: {err}"))?;
+        env::var("HOME").map_err(|err| format!("could not find home directory: {err}"))?;
 
     if let Some(prefix) = path.components().next() {
         if prefix == Component::Normal("~".as_ref()) {
@@ -384,7 +381,7 @@ fn symlink_file(target: impl AsRef<Path>, dest: impl AsRef<Path>, force: bool) -
                         "Destination {} already exists. Removing",
                         dest.display()
                     );
-                    std::fs::remove_file(dest).map_err(|err| {
+                    fs::remove_file(dest).map_err(|err| {
                         format!("could not remove file {}: {err}", dest.display())
                     })?;
                     symlink(target, dest)?;
@@ -396,7 +393,7 @@ fn symlink_file(target: impl AsRef<Path>, dest: impl AsRef<Path>, force: bool) -
                             "Destination {} is a broken symlink. Ignoring",
                             dest.display()
                         );
-                        std::fs::remove_file(dest).map_err(|err| {
+                        fs::remove_file(dest).map_err(|err| {
                             format!("could not remove file {}: {err}", dest.display())
                         })?;
                         symlink(target, dest)?;
