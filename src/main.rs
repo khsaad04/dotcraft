@@ -13,13 +13,18 @@ use std::{
 
 #[derive(Debug, Deserialize)]
 struct Manifest {
+    options: ManifestOpt,
+    variables: Option<HashMap<String, String>>,
+    entries: HashMap<String, Vec<Entry>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestOpt {
     wallpaper: Option<PathBuf>,
     #[serde(default = "default_theme_option")]
     theme: String,
     #[serde(default = "default_variant_option")]
     variant: String,
-    variables: Option<HashMap<String, String>>,
-    files: HashMap<String, File>,
 }
 
 fn default_theme_option() -> String {
@@ -31,7 +36,7 @@ fn default_variant_option() -> String {
 }
 
 #[derive(Debug, Deserialize)]
-struct File {
+struct Entry {
     target: Option<PathBuf>,
     dest: PathBuf,
     template: Option<PathBuf>,
@@ -41,7 +46,7 @@ struct File {
     post_hooks: Option<Vec<String>>,
 }
 
-fn default_recursive_option() -> bool {
+const fn default_recursive_option() -> bool {
     false
 }
 
@@ -147,32 +152,36 @@ fn entrypoint() -> Result<()> {
 
     if let cli::SubCommand::Sync { force, ref name } = args.subcommand {
         if let Some(name) = name {
-            if let Some(file) = manifest.files.get(name) {
-                if let Some(pre_hook) = &file.pre_hooks {
-                    for cmd in pre_hook.iter() {
-                        log!(Info, "Executing pre-hook in {}: {}", name, cmd);
-                        execute_hook(cmd)?;
+            if let Some(entries) = manifest.entries.get(name) {
+                for entry in entries {
+                    if let Some(pre_hook) = &entry.pre_hooks {
+                        for cmd in pre_hook.iter() {
+                            log!(Info, "Executing pre-hook in {}: {}", name, cmd);
+                            execute_hook(cmd)?;
+                        }
                     }
-                }
 
-                if let Some(target) = &file.target {
-                    symlink_dir_all(target, &file.dest, force, file.recursive).map_err(|err| {
-                        format!("something went wrong while symlinking {name}:\n    {err}")
-                    })?;
-                }
+                    if let Some(target) = &entry.target {
+                        symlink_dir_all(target, &entry.dest, force, entry.recursive).map_err(
+                            |err| {
+                                format!("something went wrong while symlinking {name}:\n    {err}")
+                            },
+                        )?;
+                    }
 
-                if let Some(template) = &file.template {
-                    create_context_map(&mut context, &manifest)?;
-                    generate_template(&file.dest, template, &context, &mut template_engine)
-                        .map_err(|err| {
-                            format!("something went wrong while generating {name}:\n    {err}")
-                        })?;
-                }
+                    if let Some(template) = &entry.template {
+                        create_context_map(&mut context, &manifest)?;
+                        generate_template(&entry.dest, template, &context, &mut template_engine)
+                            .map_err(|err| {
+                                format!("something went wrong while generating {name}:\n    {err}")
+                            })?;
+                    }
 
-                if let Some(post_hook) = &file.post_hooks {
-                    for cmd in post_hook.iter() {
-                        log!(Info, "Executing post-hook in {}: {}", name, cmd);
-                        execute_hook(cmd)?;
+                    if let Some(post_hook) = &entry.post_hooks {
+                        for cmd in post_hook.iter() {
+                            log!(Info, "Executing post-hook in {}: {}", name, cmd);
+                            execute_hook(cmd)?;
+                        }
                     }
                 }
             } else {
@@ -182,31 +191,35 @@ fn entrypoint() -> Result<()> {
             if has_templates(&manifest) {
                 create_context_map(&mut context, &manifest)?;
             }
-            for (name, file) in manifest.files.iter() {
-                if let Some(pre_hook) = &file.pre_hooks {
-                    for cmd in pre_hook.iter() {
-                        log!(Info, "Executing pre-hook in {}: {}", name, cmd);
-                        execute_hook(cmd)?;
+            for (name, entries) in manifest.entries.iter() {
+                for entry in entries {
+                    if let Some(pre_hook) = &entry.pre_hooks {
+                        for cmd in pre_hook.iter() {
+                            log!(Info, "Executing pre-hook in {}: {}", name, cmd);
+                            execute_hook(cmd)?;
+                        }
                     }
-                }
 
-                if let Some(target) = &file.target {
-                    symlink_dir_all(target, &file.dest, force, file.recursive).map_err(|err| {
-                        format!("something went wrong while symlinking {name}:\n    {err}")
-                    })?;
-                }
+                    if let Some(target) = &entry.target {
+                        symlink_dir_all(target, &entry.dest, force, entry.recursive).map_err(
+                            |err| {
+                                format!("something went wrong while symlinking {name}:\n    {err}")
+                            },
+                        )?;
+                    }
 
-                if let Some(template) = &file.template {
-                    generate_template(&file.dest, template, &context, &mut template_engine)
-                        .map_err(|err| {
-                            format!("something went wrong while generating {name}:\n    {err}")
-                        })?;
-                }
+                    if let Some(template) = &entry.template {
+                        generate_template(&entry.dest, template, &context, &mut template_engine)
+                            .map_err(|err| {
+                                format!("something went wrong while generating {name}:\n    {err}")
+                            })?;
+                    }
 
-                if let Some(post_hook) = &file.post_hooks {
-                    for cmd in post_hook.iter() {
-                        log!(Info, "Executing post-hook in {}: {}", name, cmd);
-                        execute_hook(cmd)?;
+                    if let Some(post_hook) = &entry.post_hooks {
+                        for cmd in post_hook.iter() {
+                            log!(Info, "Executing post-hook in {}: {}", name, cmd);
+                            execute_hook(cmd)?;
+                        }
                     }
                 }
             }
@@ -215,21 +228,29 @@ fn entrypoint() -> Result<()> {
 
     if let cli::SubCommand::Link { force, ref name } = args.subcommand {
         if let Some(name) = name {
-            if let Some(file) = manifest.files.get(name) {
-                if let Some(target) = &file.target {
-                    symlink_dir_all(target, &file.dest, force, file.recursive).map_err(|err| {
-                        format!("something went wrong while symlinking {name}:\n    {err}")
-                    })?;
+            if let Some(entries) = manifest.entries.get(name) {
+                for entry in entries {
+                    if let Some(target) = &entry.target {
+                        symlink_dir_all(target, &entry.dest, force, entry.recursive).map_err(
+                            |err| {
+                                format!("something went wrong while symlinking {name}:\n    {err}")
+                            },
+                        )?;
+                    }
                 }
             } else {
                 return Err(format!("could not find {}", &name).into());
             }
         } else {
-            for (name, file) in manifest.files.iter() {
-                if let Some(target) = &file.target {
-                    symlink_dir_all(target, &file.dest, force, file.recursive).map_err(|err| {
-                        format!("something went wrong while symlinking {name}:\n    {err}")
-                    })?;
+            for (name, entries) in manifest.entries.iter() {
+                for entry in entries {
+                    if let Some(target) = &entry.target {
+                        symlink_dir_all(target, &entry.dest, force, entry.recursive).map_err(
+                            |err| {
+                                format!("something went wrong while symlinking {name}:\n    {err}")
+                            },
+                        )?;
+                    }
                 }
             }
         }
@@ -237,13 +258,15 @@ fn entrypoint() -> Result<()> {
 
     if let cli::SubCommand::Generate { ref name } = args.subcommand {
         if let Some(name) = name {
-            if let Some(file) = manifest.files.get(name) {
-                if let Some(template) = &file.template {
-                    create_context_map(&mut context, &manifest)?;
-                    generate_template(&file.dest, template, &context, &mut template_engine)
-                        .map_err(|err| {
-                            format!("something went wrong while generating {name}:\n    {err}")
-                        })?;
+            if let Some(entries) = manifest.entries.get(name) {
+                for entry in entries {
+                    if let Some(template) = &entry.template {
+                        create_context_map(&mut context, &manifest)?;
+                        generate_template(&entry.dest, template, &context, &mut template_engine)
+                            .map_err(|err| {
+                                format!("something went wrong while generating {name}:\n    {err}")
+                            })?;
+                    }
                 }
             } else {
                 return Err(format!("could not find {}", &name).into());
@@ -252,12 +275,14 @@ fn entrypoint() -> Result<()> {
             if has_templates(&manifest) {
                 create_context_map(&mut context, &manifest)?;
             }
-            for (name, file) in manifest.files.iter() {
-                if let Some(template) = &file.template {
-                    generate_template(&file.dest, template, &context, &mut template_engine)
-                        .map_err(|err| {
-                            format!("something went wrong while generating {name}:\n    {err}")
-                        })?;
+            for (name, entries) in manifest.entries.iter() {
+                for entry in entries {
+                    if let Some(template) = &entry.template {
+                        generate_template(&entry.dest, template, &context, &mut template_engine)
+                            .map_err(|err| {
+                                format!("something went wrong while generating {name}:\n    {err}")
+                            })?;
+                    }
                 }
             }
         }
@@ -281,12 +306,17 @@ fn execute_hook(cmd: &str) -> Result<()> {
 }
 
 fn create_context_map(context: &mut ContextMap, manifest: &Manifest) -> Result<()> {
-    if let Some(wallpaper) = &manifest.wallpaper {
+    if let Some(wallpaper) = &manifest.options.wallpaper {
         let wp_path = wallpaper
             .canonicalize()
             .map_err(|err| format!("could not find {}: {err}", wallpaper.display()))?;
         context.insert("wallpaper".to_string(), wp_path.display().to_string());
-        colors::generate_material_colors(&wp_path, &manifest.theme, &manifest.variant, context)?;
+        colors::generate_material_colors(
+            &wp_path,
+            &manifest.options.theme,
+            &manifest.options.variant,
+            context,
+        )?;
     } else if has_templates(manifest) {
         return Err("could not generate color palette: wallpaper is not set."
             .to_string()
@@ -304,9 +334,11 @@ fn create_context_map(context: &mut ContextMap, manifest: &Manifest) -> Result<(
 }
 
 fn has_templates(manifest: &Manifest) -> bool {
-    for (_, file) in manifest.files.iter() {
-        if file.template.is_some() {
-            return true;
+    for (_, entries) in manifest.entries.iter() {
+        for entry in entries {
+            if entry.template.is_some() {
+                return true;
+            }
         }
     }
     false
