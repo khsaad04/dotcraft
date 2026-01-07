@@ -307,7 +307,7 @@ fn execute_hook(cmd: &str) -> Result<()> {
 
 fn create_context_map(context: &mut ContextMap, manifest: &Manifest) -> Result<()> {
     if let Some(wallpaper) = &manifest.options.wallpaper {
-        let wp_path = wallpaper
+        let wp_path = resolve_home_dir(wallpaper)?
             .canonicalize()
             .map_err(|err| format!("could not find {}: {err}", wallpaper.display()))?;
         context.insert("wallpaper".to_string(), wp_path.display().to_string());
