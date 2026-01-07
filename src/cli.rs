@@ -19,33 +19,33 @@ pub enum SubCommand {
 }
 
 const USAGE: &str = "
-Usage: dotcraft [OPTION] <SUBCOMMAND>
+Usage: tread [OPTION] <SUBCOMMAND>
 
 Options:
     -m, --manifest <FILE>  Path to Manifest file [default: ./Manifest.toml]
     -h, --help             Print help
 
 Subcommands:
-    sync                   Symlink files and generate templates 
-    link                   Symlink files
-    generate               Generate templates";
+    sync      Symlink files and generate templates 
+    link      Symlink files
+    generate  Generate templates";
 
 const SYNC_USAGE: &str = "
-Usage: dotcraft sync [OPTION] [NAME]
+Usage: tread sync [OPTION] [NAME]
 
 Options:
     -f, --force  Force remove existing files
     -h, --help   Print help";
 
 const LINK_USAGE: &str = "
-Usage: dotcraft link [OPTION] [NAME]
+Usage: tread link [OPTION] [NAME]
 
 Options:
     -f, --force  Force remove existing files
     -h, --help   Print help";
 
 const GENERATE_USAGE: &str = "
-Usage: dotcraft generate [NAME]
+Usage: tread generate [NAME]
 
 Options:
     -h, --help  Print help";
@@ -60,7 +60,7 @@ impl Cli {
             use flagge::Token::*;
             match arg {
                 ShortFlag('h') | LongFlag("help") => {
-                    println!("Dotfiles manager for unix-like operating systems\n{USAGE}");
+                    println!("Simple template generator and dotfiles manager\n{USAGE}");
                     exit(0);
                 }
                 ShortFlag('m') | LongFlag("manifest") => {
