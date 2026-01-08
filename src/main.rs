@@ -6,9 +6,8 @@ use std::{
     collections::HashMap,
     env, fmt, fs,
     io::{self, Write},
-    os::unix::fs::symlink,
-    path::{Component, Path, PathBuf},
-    process::{exit, Command},
+    os::unix::fs::symlink as symlink_unix,
+    path, process,
 };
 
 #[derive(Debug, Deserialize)]
@@ -20,7 +19,7 @@ struct Manifest {
 
 #[derive(Debug, Deserialize)]
 struct ManifestOpt {
-    wallpaper: Option<PathBuf>,
+    wallpaper: Option<path::PathBuf>,
     #[serde(default = "default_theme_option")]
     theme: String,
     #[serde(default = "default_variant_option")]
@@ -37,9 +36,9 @@ fn default_variant_option() -> String {
 
 #[derive(Debug, Deserialize)]
 struct Entry {
-    target: Option<PathBuf>,
-    dest: PathBuf,
-    template: Option<PathBuf>,
+    target: Option<path::PathBuf>,
+    dest: path::PathBuf,
+    template: Option<path::PathBuf>,
     #[serde(default = "default_recursive_option")]
     recursive: bool,
     pre_hooks: Option<Vec<String>>,
@@ -50,9 +49,9 @@ const fn default_recursive_option() -> bool {
     false
 }
 
-impl TryFrom<&Path> for Manifest {
+impl TryFrom<&path::Path> for Manifest {
     type Error = Error;
-    fn try_from(value: &Path) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: &path::Path) -> std::result::Result<Self, Self::Error> {
         let path = value
             .canonicalize()
             .map_err(|err| format!("invalid path {}: {err}", value.display()))?;
@@ -138,7 +137,7 @@ macro_rules! log {
 fn main() {
     if let Err(err) = entrypoint() {
         log!(Error, "{err}");
-        exit(1);
+        process::exit(1);
     }
 }
 
@@ -150,19 +149,29 @@ fn entrypoint() -> Result<()> {
 
     let mut template_engine = upon::Engine::new();
 
-    if let cli::SubCommand::Sync { force, ref name } = args.subcommand {
+    if let cli::SubCommand::Sync {
+        force,
+        dry,
+        ref name,
+    } = args.subcommand
+    {
+        if dry {
+            log!(Warning, "Performing a dry run.");
+        }
         if let Some(name) = name {
             if let Some(entries) = manifest.entries.get(name) {
                 for entry in entries {
                     if let Some(pre_hook) = &entry.pre_hooks {
                         for cmd in pre_hook.iter() {
                             log!(Info, "Executing pre-hook in {}: {}", name, cmd);
-                            execute_hook(cmd)?;
+                            if !dry {
+                                execute_hook(cmd)?;
+                            }
                         }
                     }
 
                     if let Some(target) = &entry.target {
-                        symlink_dir_all(target, &entry.dest, force, entry.recursive).map_err(
+                        symlink_dir_all(target, &entry.dest, force, dry, entry.recursive).map_err(
                             |err| {
                                 format!("something went wrong while symlinking {name}:\n    {err}")
                             },
@@ -171,16 +180,24 @@ fn entrypoint() -> Result<()> {
 
                     if let Some(template) = &entry.template {
                         create_context_map(&mut context, &manifest)?;
-                        generate_template(&entry.dest, template, &context, &mut template_engine)
-                            .map_err(|err| {
-                                format!("something went wrong while generating {name}:\n    {err}")
-                            })?;
+                        generate_template(
+                            &entry.dest,
+                            template,
+                            &context,
+                            &mut template_engine,
+                            dry,
+                        )
+                        .map_err(|err| {
+                            format!("something went wrong while generating {name}:\n    {err}")
+                        })?;
                     }
 
                     if let Some(post_hook) = &entry.post_hooks {
                         for cmd in post_hook.iter() {
                             log!(Info, "Executing post-hook in {}: {}", name, cmd);
-                            execute_hook(cmd)?;
+                            if !dry {
+                                execute_hook(cmd)?;
+                            }
                         }
                     }
                 }
@@ -196,12 +213,14 @@ fn entrypoint() -> Result<()> {
                     if let Some(pre_hook) = &entry.pre_hooks {
                         for cmd in pre_hook.iter() {
                             log!(Info, "Executing pre-hook in {}: {}", name, cmd);
-                            execute_hook(cmd)?;
+                            if !dry {
+                                execute_hook(cmd)?;
+                            }
                         }
                     }
 
                     if let Some(target) = &entry.target {
-                        symlink_dir_all(target, &entry.dest, force, entry.recursive).map_err(
+                        symlink_dir_all(target, &entry.dest, force, dry, entry.recursive).map_err(
                             |err| {
                                 format!("something went wrong while symlinking {name}:\n    {err}")
                             },
@@ -209,16 +228,24 @@ fn entrypoint() -> Result<()> {
                     }
 
                     if let Some(template) = &entry.template {
-                        generate_template(&entry.dest, template, &context, &mut template_engine)
-                            .map_err(|err| {
-                                format!("something went wrong while generating {name}:\n    {err}")
-                            })?;
+                        generate_template(
+                            &entry.dest,
+                            template,
+                            &context,
+                            &mut template_engine,
+                            dry,
+                        )
+                        .map_err(|err| {
+                            format!("something went wrong while generating {name}:\n    {err}")
+                        })?;
                     }
 
                     if let Some(post_hook) = &entry.post_hooks {
                         for cmd in post_hook.iter() {
                             log!(Info, "Executing post-hook in {}: {}", name, cmd);
-                            execute_hook(cmd)?;
+                            if !dry {
+                                execute_hook(cmd)?;
+                            }
                         }
                     }
                 }
@@ -226,12 +253,20 @@ fn entrypoint() -> Result<()> {
         }
     }
 
-    if let cli::SubCommand::Link { force, ref name } = args.subcommand {
+    if let cli::SubCommand::Link {
+        force,
+        dry,
+        ref name,
+    } = args.subcommand
+    {
+        if dry {
+            log!(Warning, "Performing a dry run.");
+        }
         if let Some(name) = name {
             if let Some(entries) = manifest.entries.get(name) {
                 for entry in entries {
                     if let Some(target) = &entry.target {
-                        symlink_dir_all(target, &entry.dest, force, entry.recursive).map_err(
+                        symlink_dir_all(target, &entry.dest, force, dry, entry.recursive).map_err(
                             |err| {
                                 format!("something went wrong while symlinking {name}:\n    {err}")
                             },
@@ -245,7 +280,7 @@ fn entrypoint() -> Result<()> {
             for (name, entries) in manifest.entries.iter() {
                 for entry in entries {
                     if let Some(target) = &entry.target {
-                        symlink_dir_all(target, &entry.dest, force, entry.recursive).map_err(
+                        symlink_dir_all(target, &entry.dest, force, dry, entry.recursive).map_err(
                             |err| {
                                 format!("something went wrong while symlinking {name}:\n    {err}")
                             },
@@ -256,16 +291,25 @@ fn entrypoint() -> Result<()> {
         }
     }
 
-    if let cli::SubCommand::Generate { ref name } = args.subcommand {
+    if let cli::SubCommand::Generate { dry, ref name } = args.subcommand {
+        if dry {
+            log!(Warning, "Performing a dry run.");
+        }
         if let Some(name) = name {
             if let Some(entries) = manifest.entries.get(name) {
                 for entry in entries {
                     if let Some(template) = &entry.template {
                         create_context_map(&mut context, &manifest)?;
-                        generate_template(&entry.dest, template, &context, &mut template_engine)
-                            .map_err(|err| {
-                                format!("something went wrong while generating {name}:\n    {err}")
-                            })?;
+                        generate_template(
+                            &entry.dest,
+                            template,
+                            &context,
+                            &mut template_engine,
+                            dry,
+                        )
+                        .map_err(|err| {
+                            format!("something went wrong while generating {name}:\n    {err}")
+                        })?;
                     }
                 }
             } else {
@@ -278,10 +322,16 @@ fn entrypoint() -> Result<()> {
             for (name, entries) in manifest.entries.iter() {
                 for entry in entries {
                     if let Some(template) = &entry.template {
-                        generate_template(&entry.dest, template, &context, &mut template_engine)
-                            .map_err(|err| {
-                                format!("something went wrong while generating {name}:\n    {err}")
-                            })?;
+                        generate_template(
+                            &entry.dest,
+                            template,
+                            &context,
+                            &mut template_engine,
+                            dry,
+                        )
+                        .map_err(|err| {
+                            format!("something went wrong while generating {name}:\n    {err}")
+                        })?;
                     }
                 }
             }
@@ -293,7 +343,7 @@ fn entrypoint() -> Result<()> {
 
 fn execute_hook(cmd: &str) -> Result<()> {
     let mut cmd_iter = cmd.split_whitespace();
-    let output = Command::new(
+    let output = process::Command::new(
         cmd_iter
             .next()
             .ok_or("could not execute hook: No command provided".to_string())?,
@@ -344,15 +394,15 @@ fn has_templates(manifest: &Manifest) -> bool {
     false
 }
 
-fn resolve_home_dir(path: impl AsRef<Path>) -> Result<PathBuf> {
+fn resolve_home_dir(path: impl AsRef<path::Path>) -> Result<path::PathBuf> {
     let path = path.as_ref();
     let home_dir =
         env::var("HOME").map_err(|err| format!("could not find home directory: {err}"))?;
 
     if let Some(prefix) = path.components().next() {
-        if prefix == Component::Normal("~".as_ref()) {
+        if prefix == path::Component::Normal("~".as_ref()) {
             if let Ok(stripped_path) = path.strip_prefix("~") {
-                let mut result = PathBuf::new();
+                let mut result = path::PathBuf::new();
                 result.push(home_dir);
                 result.push(stripped_path);
                 return Ok(result);
@@ -363,9 +413,10 @@ fn resolve_home_dir(path: impl AsRef<Path>) -> Result<PathBuf> {
 }
 
 fn symlink_dir_all(
-    target: impl AsRef<Path>,
-    dest: impl AsRef<Path>,
+    target: impl AsRef<path::Path>,
+    dest: impl AsRef<path::Path>,
     force: bool,
+    dry: bool,
     recursive: bool,
 ) -> Result<()> {
     let target = resolve_home_dir(&target)?
@@ -383,92 +434,92 @@ fn symlink_dir_all(
             let dest_parent_dir = dest
                 .parent()
                 .ok_or(format!("could not access parent dir of {}", dest.display()))?;
-            if !dest_parent_dir.exists() {
+            if !dest_parent_dir.exists() && !dry {
                 fs::create_dir_all(dest_parent_dir).map_err(|err| {
                     format!("could not create dir {}: {err}", dest_parent_dir.display())
                 })?;
-                log!(Info, "Created dir: {}", dest_parent_dir.display());
             }
-            symlink_dir_all(entry.path(), dest, force, recursive)?;
+            symlink_dir_all(entry.path(), dest, force, dry, recursive)?;
         }
     } else {
-        symlink_file(&target, &dest, force)?;
+        symlink_file(&target, &dest, force, dry)?;
     }
     Ok(())
 }
 
-fn symlink_file(target: impl AsRef<Path>, dest: impl AsRef<Path>, force: bool) -> Result<()> {
+fn symlink_file(
+    target: impl AsRef<path::Path>,
+    dest: impl AsRef<path::Path>,
+    force: bool,
+    dry: bool,
+) -> Result<()> {
     let target = target.as_ref();
     let dest = dest.as_ref();
 
-    match symlink(target, dest) {
-        Ok(()) => {
-            log!(Info, "Symlinked {} -> {}", target.display(), dest.display());
+    if dest.exists() {
+        if force {
+            log!(
+                Warning,
+                "Destination {} already exists. Removing",
+                dest.display()
+            );
+            if !dry {
+                fs::remove_file(dest)
+                    .map_err(|err| format!("could not remove file {}: {err}", dest.display()))?;
+            }
+        } else if dest.is_symlink() {
+            let symlink_origin = dest.canonicalize()?;
+            if target.canonicalize()? == symlink_origin {
+                log!(Info, "Symlink up-to-date: {}", dest.display());
+            } else {
+                log!(
+                    Warning,
+                    "Destination {} is symlinked to {}. Resolve manually.",
+                    dest.display(),
+                    symlink_origin.display()
+                );
+            }
+            return Ok(());
+        } else {
+            log!(
+                Warning,
+                "Destination {} exists but it's not a symlink. Resolve manually",
+                dest.display()
+            );
+            return Ok(());
         }
-        Err(err) => match err.kind() {
-            io::ErrorKind::AlreadyExists => {
-                if force {
-                    log!(
-                        Warning,
-                        "Destination {} already exists. Removing",
-                        dest.display()
-                    );
-                    fs::remove_file(dest).map_err(|err| {
-                        format!("could not remove file {}: {err}", dest.display())
-                    })?;
-                    symlink(target, dest)?;
-                    log!(Info, "Symlinked {} -> {}", target.display(), dest.display());
-                } else if dest.is_symlink() {
-                    if !dest.exists() {
-                        log!(
-                            Warning,
-                            "Destination {} is a broken symlink. Ignoring",
-                            dest.display()
-                        );
-                        fs::remove_file(dest).map_err(|err| {
-                            format!("could not remove file {}: {err}", dest.display())
-                        })?;
-                        symlink(target, dest)?;
-                        log!(Info, "Symlinked {} -> {}", target.display(), dest.display());
-                    } else {
-                        let symlink_origin = dest.canonicalize()?;
-                        if target.canonicalize()? == symlink_origin {
-                            log!(Info, "Symlink up-to-date: {}", dest.display());
-                        } else {
-                            log!(
-                                Warning,
-                                "Destination {} is symlinked to {}. Resolve manually.",
-                                dest.display(),
-                                symlink_origin.display()
-                            );
-                        }
-                    }
-                } else {
-                    log!(
-                        Warning,
-                        "Destination {} exists but it's not a symlink. Resolve manually",
-                        dest.display()
-                    );
-                }
-            }
-            _ => {
-                return Err(format!(
-                    "could not symlink {} to {}: {err}",
-                    target.display(),
-                    dest.display()
-                )
-                .into());
-            }
-        },
+    } else if dest.is_symlink() {
+        log!(
+            Warning,
+            "Destination {} is a broken symlink. Ignoring",
+            dest.display()
+        );
+        if !dry {
+            fs::remove_file(dest)
+                .map_err(|err| format!("could not remove file {}: {err}", dest.display()))?;
+        }
     }
+
+    if !dry {
+        symlink_unix(target, dest).map_err(|err| {
+            format!(
+                "could not symlink {} to {}: {err}",
+                target.display(),
+                dest.display()
+            )
+        })?;
+    }
+
+    log!(Info, "Symlinked {} -> {}", target.display(), dest.display());
     Ok(())
 }
 
 fn generate_template(
-    dest: impl AsRef<Path>,
-    template: impl AsRef<Path>,
+    dest: impl AsRef<path::Path>,
+    template: impl AsRef<path::Path>,
     context: &ContextMap,
     template_engine: &mut upon::Engine,
+    dry: bool,
 ) -> Result<()> {
     let template = resolve_home_dir(template.as_ref())?
         .canonicalize()
@@ -485,21 +536,18 @@ fn generate_template(
         .to_string()
         .map_err(|err| format!("could not render template {}: {err}", template.display()))?;
 
-    if let Err(err) = fs::write(&dest, &rendered) {
-        match err.kind() {
-            io::ErrorKind::NotFound => {
-                fs::create_dir_all(
-                    dest.parent()
-                        .ok_or(format!("could not access parent dir of {}", dest.display()))?,
-                )?;
-                fs::write(&dest, &rendered)
-                    .map_err(|err| format!("could not write to {}: {err}", dest.display()))?;
-            }
-            _ => {
-                return Err(format!("could not write to {}: {err}", dest.display()).into());
-            }
+    let dest_parent = dest
+        .parent()
+        .ok_or(format!("could not access parent dir of {}", dest.display()))?;
+
+    if !dry {
+        if !dest_parent.exists() {
+            fs::create_dir_all(dest_parent)?;
         }
+        fs::write(&dest, &rendered)
+            .map_err(|err| format!("could not write to {}: {err}", dest.display()))?;
     }
+
     log!(Info, "Template generated: {}", template.display());
     Ok(())
 }

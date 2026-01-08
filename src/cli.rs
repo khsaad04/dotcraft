@@ -13,9 +13,20 @@ pub struct Cli {
 
 #[derive(Debug)]
 pub enum SubCommand {
-    Sync { force: bool, name: Option<String> },
-    Link { force: bool, name: Option<String> },
-    Generate { name: Option<String> },
+    Sync {
+        force: bool,
+        dry: bool,
+        name: Option<String>,
+    },
+    Link {
+        force: bool,
+        dry: bool,
+        name: Option<String>,
+    },
+    Generate {
+        dry: bool,
+        name: Option<String>,
+    },
 }
 
 const USAGE: &str = "
@@ -35,6 +46,8 @@ Usage: tread sync [OPTION] [NAME]
 
 Options:
     -f, --force  Force remove existing files
+    -d, --dry    Dry run without actually creating the symlinks or
+                 generating any templates
     -h, --help   Print help";
 
 const LINK_USAGE: &str = "
@@ -42,12 +55,14 @@ Usage: tread link [OPTION] [NAME]
 
 Options:
     -f, --force  Force remove existing files
+    -d, --dry    Dry run without actually creating the symlinks
     -h, --help   Print help";
 
 const GENERATE_USAGE: &str = "
 Usage: tread generate [NAME]
 
 Options:
+    -d, --dry   Dry run without actually generating any templates
     -h, --help  Print help";
 
 impl Cli {
@@ -73,6 +88,7 @@ impl Cli {
                 Value(ref val) => match val.as_os_str().as_bytes() {
                     b"sync" => {
                         let mut force = false;
+                        let mut dry = false;
                         let mut name: Option<String> = None;
                         while let Some(arg) = lexer.next_token()? {
                             match arg {
@@ -81,6 +97,7 @@ impl Cli {
                                     exit(0);
                                 }
                                 ShortFlag('f') | LongFlag("force") => force = true,
+                                ShortFlag('d') | LongFlag("dry") => dry = true,
                                 Value(val) => {
                                     name = Some(val.into_string().map_err(|err| {
                                         format!(
@@ -94,10 +111,11 @@ impl Cli {
                                 }
                             }
                         }
-                        subcommand = Some(SubCommand::Sync { force, name });
+                        subcommand = Some(SubCommand::Sync { force, dry, name });
                     }
                     b"link" => {
                         let mut force = false;
+                        let mut dry = false;
                         let mut name: Option<String> = None;
                         while let Some(arg) = lexer.next_token()? {
                             match arg {
@@ -106,6 +124,7 @@ impl Cli {
                                     exit(0);
                                 }
                                 ShortFlag('f') | LongFlag("force") => force = true,
+                                ShortFlag('d') | LongFlag("dry") => dry = true,
                                 Value(val) => {
                                     name = Some(val.into_string().map_err(|err| {
                                         format!(
@@ -119,9 +138,10 @@ impl Cli {
                                 }
                             }
                         }
-                        subcommand = Some(SubCommand::Link { force, name });
+                        subcommand = Some(SubCommand::Link { force, name, dry });
                     }
                     b"generate" => {
+                        let mut dry = false;
                         let mut name: Option<String> = None;
                         while let Some(arg) = lexer.next_token()? {
                             match arg {
@@ -129,6 +149,7 @@ impl Cli {
                                     println!("Generate templates\n{GENERATE_USAGE}");
                                     exit(0);
                                 }
+                                ShortFlag('d') | LongFlag("dry") => dry = true,
                                 Value(val) => {
                                     name = Some(val.into_string().map_err(|err| {
                                         format!(
@@ -144,7 +165,7 @@ impl Cli {
                                 }
                             }
                         }
-                        subcommand = Some(SubCommand::Generate { name });
+                        subcommand = Some(SubCommand::Generate { dry, name });
                     }
                     _ => return Err(format!("invalid subcommand {arg}\n{USAGE}").into()),
                 },
