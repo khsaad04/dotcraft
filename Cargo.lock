@@ -301,7 +301,7 @@ dependencies = [
 [[package]]
 name = "flagge"
 version = "0.1.0"
-source = "git+https://github.com/khsaad04/flagge#f03439125be3b81e60ed2d7d64d7953d054ba03f"
+source = "git+https://github.com/khsaad04/flagge#f6e48ecbf919d3dc0afd0e181f5c4484eb6a691a"
 
 [[package]]
 name = "flate2"
