@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-flagge = { git = "https://github.com/khsaad04/flagge", version = "0.1.0" }
+flagge = { git = "https://github.com/khsaad04/flagge" }
 image = "0.25.6"
 material-colors = "0.4.2"
 quantette = "0.3.0"
