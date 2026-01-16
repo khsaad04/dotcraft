@@ -70,7 +70,7 @@ impl Cli {
         let mut manifest_path = PathBuf::from("Manifest.toml");
         let mut subcommand: Option<SubCommand> = None;
 
-        let mut lexer = Lexer::from_env();
+        let mut lexer = Lexer::new(std::env::args_os());
         while let Some(arg) = lexer.next_token()? {
             use flagge::Token::*;
             match arg {
