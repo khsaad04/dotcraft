@@ -328,22 +328,16 @@ fn has_templates(manifest: &Manifest) -> bool {
     false
 }
 
-fn resolve_home_dir(path: impl AsRef<path::Path>) -> Result<path::PathBuf> {
-    let path = path.as_ref();
+fn resolve_home_dir(the_path: impl AsRef<path::Path>) -> Result<path::PathBuf> {
+    let the_path = the_path.as_ref();
     let home_dir =
         env::var("HOME").map_err(|err| format!("could not find home directory: {err}"))?;
 
-    if let Some(prefix) = path.components().next() {
-        if prefix == path::Component::Normal("~".as_ref()) {
-            if let Ok(stripped_path) = path.strip_prefix("~") {
-                let mut result = path::PathBuf::new();
-                result.push(home_dir);
-                result.push(stripped_path);
-                return Ok(result);
-            }
-        }
+    if let Ok(stripped_path) = the_path.strip_prefix("~") {
+        Ok(path::PathBuf::from(home_dir).join(stripped_path))
+    } else {
+        Ok(the_path.to_path_buf())
     }
-    Ok(path.to_path_buf())
 }
 
 fn symlink_dir_all(
