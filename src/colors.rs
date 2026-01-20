@@ -1,22 +1,27 @@
-use crate::{ContextMap, Result};
+use crate::{Result, TemplateContext};
 
 use material_colors::{blend::harmonize, color::Argb, dynamic_color::Variant, theme::ThemeBuilder};
 use quantette::{image, PalettePipeline};
 use std::{collections::HashMap, path::Path};
 
 pub fn generate_material_colors(
-    wp_path: &Path,
+    wallpaper_path: &Path,
     theme: &str,
     variant: &str,
-    context: &mut ContextMap,
+    context: &mut TemplateContext,
 ) -> Result<()> {
-    let img = image::open(wp_path)
-        .map_err(|err| format!("Could not load image {}: {err}", wp_path.display()))?
+    let img = image::open(wallpaper_path)
+        .map_err(|err| {
+            format!(
+                "Could not load wallpaper {}: {err}",
+                wallpaper_path.display()
+            )
+        })?
         .into_rgb8();
     let mut pipeline = PalettePipeline::try_from(&img).map_err(|err| {
         format!(
-            "Could not color quantize image {}: {err}",
-            wp_path.display()
+            "Could not color quantize wallpaper {}: {err}",
+            wallpaper_path.display()
         )
     })?;
     let quantized_palette = pipeline.palette_size(1).palette_par();

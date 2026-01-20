@@ -4,11 +4,15 @@ mod colors;
 use serde::Deserialize;
 use std::{
     collections::HashMap,
-    env, fmt, fs,
+    env, fs,
     io::{self, Write},
     os::unix::fs::symlink as symlink_unix,
     path, process,
 };
+
+#[macro_use]
+mod helper;
+use helper::*;
 
 #[derive(Debug, Deserialize)]
 struct Manifest {
@@ -49,6 +53,39 @@ const fn default_recursive_option() -> bool {
     false
 }
 
+type TemplateContext = HashMap<String, String>;
+
+fn init_template_context(context: &mut TemplateContext, manifest: &Manifest) -> Result<()> {
+    if let Some(wallpaper) = &manifest.options.wallpaper {
+        let wallpaper_path = resolve_home_dir(wallpaper)?
+            .canonicalize()
+            .map_err(|err| format!("could not find {}: {err}", wallpaper.display()))?;
+        context.insert(
+            "wallpaper".to_string(),
+            wallpaper_path.display().to_string(),
+        );
+        colors::generate_material_colors(
+            &wallpaper_path,
+            &manifest.options.theme,
+            &manifest.options.variant,
+            context,
+        )?;
+    } else if has_templates(manifest) {
+        return Err("could not generate color palette: wallpaper is not set."
+            .to_string()
+            .into());
+    } else {
+        log!(Warning, "Skipping color scheme generation.");
+    }
+
+    if let Some(vars) = &manifest.variables {
+        for (k, v) in vars {
+            context.insert(k.to_string(), v.to_string());
+        }
+    }
+    Ok(())
+}
+
 impl TryFrom<&path::Path> for Manifest {
     type Error = Error;
     fn try_from(value: &path::Path) -> std::result::Result<Self, Self::Error> {
@@ -73,67 +110,6 @@ impl TryFrom<&path::Path> for Manifest {
     }
 }
 
-type ContextMap = HashMap<String, String>;
-
-pub type Result<T> = std::result::Result<T, Error>;
-
-pub struct Error {
-    ctx: String,
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.ctx)
-    }
-}
-
-impl From<String> for Error {
-    fn from(value: String) -> Self {
-        Self { ctx: value }
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(value: io::Error) -> Self {
-        Self {
-            ctx: value.to_string(),
-        }
-    }
-}
-
-impl From<flagge::Error> for Error {
-    fn from(value: flagge::Error) -> Self {
-        Self {
-            ctx: value.to_string(),
-        }
-    }
-}
-
-enum LogLevel {
-    Info,
-    Warning,
-    Error,
-}
-
-macro_rules! log {
-    ($loglevel:ident, $($arg:tt)*) => {
-        match LogLevel::$loglevel {
-            LogLevel::Info => {
-                print!("\x1b[0;32mINFO\x1b[0m: ");
-                println!($($arg)*);
-            }
-            LogLevel::Warning => {
-                print!("\x1b[0;33mWARNING\x1b[0m: ");
-                println!($($arg)*);
-            }
-            LogLevel::Error => {
-                eprint!("\x1b[0;31mERROR\x1b[0m: ");
-                eprintln!($($arg)*);
-            }
-        }
-    };
-}
-
 fn main() {
     if let Err(err) = entrypoint() {
         log!(Error, "{err}");
@@ -144,8 +120,8 @@ fn main() {
 fn entrypoint() -> Result<()> {
     let args = cli::Cli::try_parse()?;
 
-    let mut context: ContextMap = HashMap::new();
     let manifest = Manifest::try_from(args.manifest_path.as_path())?;
+    let mut context: TemplateContext = HashMap::new();
 
     let mut template_engine = upon::Engine::new();
 
@@ -179,7 +155,7 @@ fn entrypoint() -> Result<()> {
                     }
 
                     if let Some(template) = &entry.template {
-                        create_context_map(&mut context, &manifest)?;
+                        init_template_context(&mut context, &manifest)?;
                         generate_template(
                             &entry.dest,
                             template,
@@ -206,7 +182,7 @@ fn entrypoint() -> Result<()> {
             }
         } else {
             if has_templates(&manifest) {
-                create_context_map(&mut context, &manifest)?;
+                init_template_context(&mut context, &manifest)?;
             }
             for (name, entries) in manifest.entries.iter() {
                 for entry in entries {
@@ -299,7 +275,7 @@ fn entrypoint() -> Result<()> {
             if let Some(entries) = manifest.entries.get(name) {
                 for entry in entries {
                     if let Some(template) = &entry.template {
-                        create_context_map(&mut context, &manifest)?;
+                        init_template_context(&mut context, &manifest)?;
                         generate_template(
                             &entry.dest,
                             template,
@@ -317,7 +293,7 @@ fn entrypoint() -> Result<()> {
             }
         } else {
             if has_templates(&manifest) {
-                create_context_map(&mut context, &manifest)?;
+                init_template_context(&mut context, &manifest)?;
             }
             for (name, entries) in manifest.entries.iter() {
                 for entry in entries {
@@ -338,48 +314,6 @@ fn entrypoint() -> Result<()> {
         }
     }
 
-    Ok(())
-}
-
-fn execute_hook(cmd: &str) -> Result<()> {
-    let mut cmd_iter = cmd.split_whitespace();
-    let output = process::Command::new(
-        cmd_iter
-            .next()
-            .ok_or("could not execute hook: No command provided".to_string())?,
-    )
-    .args(cmd_iter)
-    .output()?;
-    io::stdout().write_all(&output.stdout)?;
-    io::stderr().write_all(&output.stderr)?;
-    Ok(())
-}
-
-fn create_context_map(context: &mut ContextMap, manifest: &Manifest) -> Result<()> {
-    if let Some(wallpaper) = &manifest.options.wallpaper {
-        let wp_path = resolve_home_dir(wallpaper)?
-            .canonicalize()
-            .map_err(|err| format!("could not find {}: {err}", wallpaper.display()))?;
-        context.insert("wallpaper".to_string(), wp_path.display().to_string());
-        colors::generate_material_colors(
-            &wp_path,
-            &manifest.options.theme,
-            &manifest.options.variant,
-            context,
-        )?;
-    } else if has_templates(manifest) {
-        return Err("could not generate color palette: wallpaper is not set."
-            .to_string()
-            .into());
-    } else {
-        log!(Warning, "Skipping color scheme generation.");
-    }
-
-    if let Some(vars) = &manifest.variables {
-        for (k, v) in vars {
-            context.insert(k.to_string(), v.to_string());
-        }
-    }
     Ok(())
 }
 
@@ -517,7 +451,7 @@ fn symlink_file(
 fn generate_template(
     dest: impl AsRef<path::Path>,
     template: impl AsRef<path::Path>,
-    context: &ContextMap,
+    context: &TemplateContext,
     template_engine: &mut upon::Engine,
     dry: bool,
 ) -> Result<()> {
@@ -549,5 +483,19 @@ fn generate_template(
     }
 
     log!(Info, "Template generated: {}", template.display());
+    Ok(())
+}
+
+fn execute_hook(cmd: &str) -> Result<()> {
+    let mut cmd_iter = cmd.split_whitespace();
+    let output = process::Command::new(
+        cmd_iter
+            .next()
+            .ok_or("could not execute hook: No command provided".to_string())?,
+    )
+    .args(cmd_iter)
+    .output()?;
+    io::stdout().write_all(&output.stdout)?;
+    io::stderr().write_all(&output.stderr)?;
     Ok(())
 }
