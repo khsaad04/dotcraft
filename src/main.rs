@@ -426,14 +426,12 @@ fn symlink_file(
             fs::remove_file(dest)
                 .map_err(|err| format!("could not remove file {}: {err}", dest.display()))?;
         }
-    } else {
-        if !dry {
-            let dest_parent = dest
-                .parent()
-                .ok_or(format!("could not access parent dir of {}", dest.display()))?;
-            fs::create_dir_all(dest_parent)
-                .map_err(|err| format!("could not create dir {}: {err}", dest_parent.display()))?;
-        }
+    } else if !dry {
+        let dest_parent = dest
+            .parent()
+            .ok_or(format!("could not access parent dir of {}", dest.display()))?;
+        fs::create_dir_all(dest_parent)
+            .map_err(|err| format!("could not create dir {}: {err}", dest_parent.display()))?;
     }
 
     if !dry {
