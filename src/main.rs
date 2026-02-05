@@ -125,189 +125,191 @@ fn entrypoint() -> Result<()> {
 
     let mut template_engine = upon::Engine::new();
 
-    if let cli::SubCommand::Sync {
-        force,
-        dry,
-        ref name,
-    } = args.subcommand
-    {
-        if dry {
-            log!(Warning, "Performing a dry run.");
-        }
-        if let Some(name) = name {
-            if let Some(entries) = manifest.entries.get(name) {
-                for entry in entries {
-                    if let Some(pre_hook) = &entry.pre_hooks {
-                        for cmd in pre_hook.iter() {
-                            log!(Info, "Executing pre-hook in {}: {}", name, cmd);
-                            if !dry {
-                                execute_hook(cmd)?;
+    match args.subcommand {
+        cli::SubCommand::Sync {
+            force,
+            dry,
+            ref name,
+        } => {
+            if dry {
+                log!(Warning, "Performing a dry run.");
+            }
+            if let Some(name) = name {
+                if let Some(entries) = manifest.entries.get(name) {
+                    for entry in entries {
+                        if let Some(pre_hook) = &entry.pre_hooks {
+                            for cmd in pre_hook.iter() {
+                                log!(Info, "Executing pre-hook in {}: {}", name, cmd);
+                                if !dry {
+                                    execute_hook(cmd)?;
+                                }
+                            }
+                        }
+
+                        if let Some(target) = &entry.target {
+                            symlink_dir_all(target, &entry.dest, force, dry, entry.recursive)
+                                .map_err(|err| {
+                                    format!(
+                                        "something went wrong while symlinking {name}:\n    {err}"
+                                    )
+                                })?;
+                        }
+
+                        if let Some(template) = &entry.template {
+                            init_template_context(&mut context, &manifest)?;
+                            generate_template(
+                                &entry.dest,
+                                template,
+                                &context,
+                                &mut template_engine,
+                                dry,
+                            )
+                            .map_err(|err| {
+                                format!("something went wrong while generating {name}:\n    {err}")
+                            })?;
+                        }
+
+                        if let Some(post_hook) = &entry.post_hooks {
+                            for cmd in post_hook.iter() {
+                                log!(Info, "Executing post-hook in {}: {}", name, cmd);
+                                if !dry {
+                                    execute_hook(cmd)?;
+                                }
                             }
                         }
                     }
-
-                    if let Some(target) = &entry.target {
-                        symlink_dir_all(target, &entry.dest, force, dry, entry.recursive).map_err(
-                            |err| {
-                                format!("something went wrong while symlinking {name}:\n    {err}")
-                            },
-                        )?;
-                    }
-
-                    if let Some(template) = &entry.template {
-                        init_template_context(&mut context, &manifest)?;
-                        generate_template(
-                            &entry.dest,
-                            template,
-                            &context,
-                            &mut template_engine,
-                            dry,
-                        )
-                        .map_err(|err| {
-                            format!("something went wrong while generating {name}:\n    {err}")
-                        })?;
-                    }
-
-                    if let Some(post_hook) = &entry.post_hooks {
-                        for cmd in post_hook.iter() {
-                            log!(Info, "Executing post-hook in {}: {}", name, cmd);
-                            if !dry {
-                                execute_hook(cmd)?;
-                            }
-                        }
-                    }
+                } else {
+                    return Err(format!("could not find {}", &name).into());
                 }
             } else {
-                return Err(format!("could not find {}", &name).into());
-            }
-        } else {
-            if has_templates(&manifest) {
-                init_template_context(&mut context, &manifest)?;
-            }
-            for (name, entries) in manifest.entries.iter() {
-                for entry in entries {
-                    if let Some(pre_hook) = &entry.pre_hooks {
-                        for cmd in pre_hook.iter() {
-                            log!(Info, "Executing pre-hook in {}: {}", name, cmd);
-                            if !dry {
-                                execute_hook(cmd)?;
+                if has_templates(&manifest) {
+                    init_template_context(&mut context, &manifest)?;
+                }
+                for (name, entries) in manifest.entries.iter() {
+                    for entry in entries {
+                        if let Some(pre_hook) = &entry.pre_hooks {
+                            for cmd in pre_hook.iter() {
+                                log!(Info, "Executing pre-hook in {}: {}", name, cmd);
+                                if !dry {
+                                    execute_hook(cmd)?;
+                                }
+                            }
+                        }
+
+                        if let Some(target) = &entry.target {
+                            symlink_dir_all(target, &entry.dest, force, dry, entry.recursive)
+                                .map_err(|err| {
+                                    format!(
+                                        "something went wrong while symlinking {name}:\n    {err}"
+                                    )
+                                })?;
+                        }
+
+                        if let Some(template) = &entry.template {
+                            generate_template(
+                                &entry.dest,
+                                template,
+                                &context,
+                                &mut template_engine,
+                                dry,
+                            )
+                            .map_err(|err| {
+                                format!("something went wrong while generating {name}:\n    {err}")
+                            })?;
+                        }
+
+                        if let Some(post_hook) = &entry.post_hooks {
+                            for cmd in post_hook.iter() {
+                                log!(Info, "Executing post-hook in {}: {}", name, cmd);
+                                if !dry {
+                                    execute_hook(cmd)?;
+                                }
                             }
                         }
                     }
-
-                    if let Some(target) = &entry.target {
-                        symlink_dir_all(target, &entry.dest, force, dry, entry.recursive).map_err(
-                            |err| {
-                                format!("something went wrong while symlinking {name}:\n    {err}")
-                            },
-                        )?;
+                }
+            }
+        }
+        cli::SubCommand::Link {
+            force,
+            dry,
+            ref name,
+        } => {
+            if dry {
+                log!(Warning, "Performing a dry run.");
+            }
+            if let Some(name) = name {
+                if let Some(entries) = manifest.entries.get(name) {
+                    for entry in entries {
+                        if let Some(target) = &entry.target {
+                            symlink_dir_all(target, &entry.dest, force, dry, entry.recursive)
+                                .map_err(|err| {
+                                    format!(
+                                        "something went wrong while symlinking {name}:\n    {err}"
+                                    )
+                                })?;
+                        }
                     }
-
-                    if let Some(template) = &entry.template {
-                        generate_template(
-                            &entry.dest,
-                            template,
-                            &context,
-                            &mut template_engine,
-                            dry,
-                        )
-                        .map_err(|err| {
-                            format!("something went wrong while generating {name}:\n    {err}")
-                        })?;
-                    }
-
-                    if let Some(post_hook) = &entry.post_hooks {
-                        for cmd in post_hook.iter() {
-                            log!(Info, "Executing post-hook in {}: {}", name, cmd);
-                            if !dry {
-                                execute_hook(cmd)?;
-                            }
+                } else {
+                    return Err(format!("could not find {}", &name).into());
+                }
+            } else {
+                for (name, entries) in manifest.entries.iter() {
+                    for entry in entries {
+                        if let Some(target) = &entry.target {
+                            symlink_dir_all(target, &entry.dest, force, dry, entry.recursive)
+                                .map_err(|err| {
+                                    format!(
+                                        "something went wrong while symlinking {name}:\n    {err}"
+                                    )
+                                })?;
                         }
                     }
                 }
             }
         }
-    }
-
-    if let cli::SubCommand::Link {
-        force,
-        dry,
-        ref name,
-    } = args.subcommand
-    {
-        if dry {
-            log!(Warning, "Performing a dry run.");
-        }
-        if let Some(name) = name {
-            if let Some(entries) = manifest.entries.get(name) {
-                for entry in entries {
-                    if let Some(target) = &entry.target {
-                        symlink_dir_all(target, &entry.dest, force, dry, entry.recursive).map_err(
-                            |err| {
-                                format!("something went wrong while symlinking {name}:\n    {err}")
-                            },
-                        )?;
+        cli::SubCommand::Generate { dry, ref name } => {
+            if dry {
+                log!(Warning, "Performing a dry run.");
+            }
+            if let Some(name) = name {
+                if let Some(entries) = manifest.entries.get(name) {
+                    for entry in entries {
+                        if let Some(template) = &entry.template {
+                            init_template_context(&mut context, &manifest)?;
+                            generate_template(
+                                &entry.dest,
+                                template,
+                                &context,
+                                &mut template_engine,
+                                dry,
+                            )
+                            .map_err(|err| {
+                                format!("something went wrong while generating {name}:\n    {err}")
+                            })?;
+                        }
                     }
+                } else {
+                    return Err(format!("could not find {}", &name).into());
                 }
             } else {
-                return Err(format!("could not find {}", &name).into());
-            }
-        } else {
-            for (name, entries) in manifest.entries.iter() {
-                for entry in entries {
-                    if let Some(target) = &entry.target {
-                        symlink_dir_all(target, &entry.dest, force, dry, entry.recursive).map_err(
-                            |err| {
-                                format!("something went wrong while symlinking {name}:\n    {err}")
-                            },
-                        )?;
-                    }
+                if has_templates(&manifest) {
+                    init_template_context(&mut context, &manifest)?;
                 }
-            }
-        }
-    }
-
-    if let cli::SubCommand::Generate { dry, ref name } = args.subcommand {
-        if dry {
-            log!(Warning, "Performing a dry run.");
-        }
-        if let Some(name) = name {
-            if let Some(entries) = manifest.entries.get(name) {
-                for entry in entries {
-                    if let Some(template) = &entry.template {
-                        init_template_context(&mut context, &manifest)?;
-                        generate_template(
-                            &entry.dest,
-                            template,
-                            &context,
-                            &mut template_engine,
-                            dry,
-                        )
-                        .map_err(|err| {
-                            format!("something went wrong while generating {name}:\n    {err}")
-                        })?;
-                    }
-                }
-            } else {
-                return Err(format!("could not find {}", &name).into());
-            }
-        } else {
-            if has_templates(&manifest) {
-                init_template_context(&mut context, &manifest)?;
-            }
-            for (name, entries) in manifest.entries.iter() {
-                for entry in entries {
-                    if let Some(template) = &entry.template {
-                        generate_template(
-                            &entry.dest,
-                            template,
-                            &context,
-                            &mut template_engine,
-                            dry,
-                        )
-                        .map_err(|err| {
-                            format!("something went wrong while generating {name}:\n    {err}")
-                        })?;
+                for (name, entries) in manifest.entries.iter() {
+                    for entry in entries {
+                        if let Some(template) = &entry.template {
+                            generate_template(
+                                &entry.dest,
+                                template,
+                                &context,
+                                &mut template_engine,
+                                dry,
+                            )
+                            .map_err(|err| {
+                                format!("something went wrong while generating {name}:\n    {err}")
+                            })?;
+                        }
                     }
                 }
             }
